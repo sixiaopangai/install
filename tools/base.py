@@ -5,6 +5,7 @@ import re
 import sys
 import time
 import subprocess
+import shutil
 import importlib
 import locale
 from queue import Queue
@@ -151,15 +152,35 @@ def GetOsVersion():
     # to be removed after Ubuntu Xenial is out of support
     import sys
 
-    # @TODO 系统的python版本小于3.8，Conda版本>3.8
-    if sys.version_info >= (3, 8):
-        import distro
-    else:
-        import platform as distro
     import locale
     import os
     import platform
     import subprocess
+
+    class _OsReleaseDistro:
+        """python3-distro 装不上时(apt 源坏了/conda 环境)的兜底, 直接读 /etc/os-release"""
+
+        @staticmethod
+        def linux_distribution(full_distribution_name=False):
+            info = {}
+            for path in ("/etc/os-release", "/usr/lib/os-release"):
+                if os.path.exists(path):
+                    with codecs.open(path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            key, _, val = line.strip().partition("=")
+                            info[key] = val.strip('"')
+                    break
+            codename = info.get("VERSION_CODENAME") or info.get("UBUNTU_CODENAME", "")
+            return (info.get("ID", ""), info.get("VERSION_ID", ""), codename)
+
+    # @TODO 系统的python版本小于3.8，Conda版本>3.8
+    if sys.version_info >= (3, 8):
+        try:
+            import distro
+        except ImportError:
+            distro = _OsReleaseDistro
+    else:
+        import platform as distro
 
     def _read_stdout(cmd):
         try:
@@ -255,7 +276,7 @@ def GetOsVersion():
             elif hasattr(distro, "dist"):
                 self.lsb_info = distro.dist()
             else:
-                self.lsb_info = None
+                self.lsb_info = _OsReleaseDistro.linux_distribution()
 
         def is_os(self):
             if self.lsb_info is None:
@@ -289,7 +310,13 @@ def GetOsVersion():
                     return "stretch"
                 if v.startswith("10."):
                     return "buster"
-                return ""
+                # Debian 11 起版本号不再带小数点, 直接取 lsb/os-release 里的代号
+                codename = (self.lsb_info[2] or "").split(" ")[0].lower()
+                if codename:
+                    return codename
+                return {"11": "bullseye", "12": "bookworm", "13": "trixie"}.get(
+                    v.split(".")[0], ""
+                )
 
     class FdoDetect(OsDetector):
         """
@@ -985,11 +1012,22 @@ class CmdTask(Task):
         executable="/bin/sh",
     ) -> None:
         super().__init__(Task.TASK_TYPE_CMD)
-        self.command = command
+        self.command = CmdTask.strip_sudo_if_needed(command)
         self.timeout = timeout
         self.os_command = os_command
         self.cwd = path
         self.executable = executable
+
+    @staticmethod
+    def strip_sudo_if_needed(command):
+        """
+        Docker 容器里一般是 root 且没有装 sudo, 这时去掉命令里的 sudo 前缀, 否则一律 command not found
+        """
+        if not isinstance(command, str) or os.geteuid() != 0:
+            return command
+        if shutil.which("sudo"):
+            return command
+        return re.sub(r"(^|[|;&(]\s*)sudo\s+(?:-E\s+)?", r"\1", command)
 
     def getlog(self, callback=None):
         stdout_line = ""
@@ -1419,8 +1457,8 @@ class FileUtils:
             line = str(line)  # 确保 line 是字符串
             # 对每个 pattern 进行检查
             for pattern in patterns:
-                # 如果找到一个匹配
-                if len(re.findall(pattern, line)) == 1:
+                # 如果找到匹配(输出被拼成一整段, 同一错误往往出现多次, 不能要求恰好一次)
+                if re.search(pattern, line):
                     return True  # 返回 True 表示匹配成功
         # 如果所有行和所有模式都未匹配，返回 False
         return False

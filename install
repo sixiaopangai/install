@@ -1,15 +1,24 @@
 export FISHROS_URL=http://mirror.fishros.com/install/
 
-mkdir -p /tmp/fishinstall/tools/translation/assets
-wget $FISHROS_URL/install.py -O /tmp/fishinstall/install.py 2>>/dev/null 
-source /etc/profile
-
 SUDO=''
-if [ $UID -ne 0 ];then
+if [ "$(id -u)" -ne 0 ];then
     SUDO='sudo'
 fi
-$SUDO apt install python3-distro python3-yaml -y
-$SUDO python3 /tmp/fishinstall/install.py
+
+# 上次运行被中断时 /tmp/fishinstall 会残留且属主是 root, 普通用户再下载会因权限不足静默失败,
+# 结果要么没有菜单直接退出, 要么跑的是旧脚本, 所以每次先清掉
+$SUDO rm -rf /tmp/fishinstall/
+mkdir -p /tmp/fishinstall/tools/translation/assets
+wget -q $FISHROS_URL/install.py -O /tmp/fishinstall/install.py
+source /etc/profile
+
+if [ -s /tmp/fishinstall/install.py ]; then
+    $SUDO apt install python3-distro python3-yaml -y
+    $SUDO python3 /tmp/fishinstall/install.py
+else
+    echo "下载一键安装脚本失败: ${FISHROS_URL}install.py"
+    echo "请检查网络后重试; 如果提示证书相关错误, 请先执行 sudo apt install -y ca-certificates"
+fi
 $SUDO rm -rf /tmp/fishinstall/
 
 if [ -f fishros ]; then
