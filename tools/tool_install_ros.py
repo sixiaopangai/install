@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from pickle import NONE
+import re
 from .base import BaseTool
 from .base import PrintUtils, CmdTask, FileUtils, AptUtils, ChooseTask
 from .base import osversion
@@ -194,6 +194,9 @@ key_urls = [
     "https://gitee.com/fishros/rosdistro/raw/master/ros.asc",
     "https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc",
 ]
+# ROS 官方 GPG 公钥完整指纹, 密钥服务器兜底时使用(短指纹容易撞)
+ros_key_fingerprint = "C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654"
+ros_keyring = "/etc/apt/trusted.gpg.d/ros.gpg"
 
 ros_mirror_dic = {
     "tsinghua": {
@@ -211,6 +214,10 @@ ros_mirror_dic = {
     "huawei": {
         "ROS1": "https://repo.huaweicloud.com/ros/ubuntu/",
         "ROS2": "https://repo.huaweicloud.com/ros2/ubuntu/",
+    },
+    # 阿里云的 ROS1 源停在 2021 年, 不要用; ROS2 源与官方同步, 是 EOL 系统(focal/bionic...)唯一可用的国内源
+    "aliyun": {
+        "ROS2": "https://mirrors.aliyun.com/ros2/ubuntu/",
     },
     "packages.ros": {
         "ROS1": "http://packages.ros.org/ros/ubuntu/",
@@ -380,11 +387,12 @@ ros_dist_dic = {
 }
 
 
+# 2026-10 实测: 清华/中科大/华为/MirrorZ 的 ROS2 源里 bionic/focal/buster/xenial 的索引
+# 停在 2024~2025 年, 但对应的 deb 包已被删除, apt 能看到 ros-foxy-* 却下载 404;
+# 阿里云与官方源同步正常. 这几个系统的 ROS2 只保留阿里云和官方源.
 ros2_dist_dic = {
     "bionic": {
-        "tsinghua",
-        "mirrorz",
-        "huawei",
+        "aliyun",
         "packages.ros",
     },
     "bookworm": {
@@ -392,6 +400,7 @@ ros2_dist_dic = {
         "ustc",
         "huawei",
         "mirrorz",
+        "aliyun",
         "packages.ros",
     },
     "bullseye": {
@@ -399,12 +408,11 @@ ros2_dist_dic = {
         "ustc",
         "huawei",
         "mirrorz",
+        "aliyun",
         "packages.ros",
     },
     "buster": {
-        "tsinghua",
-        "ustc",
-        "huawei",
+        "aliyun",
         "packages.ros",
     },
     "cosmic": {
@@ -417,10 +425,7 @@ ros2_dist_dic = {
         "packages.ros",
     },
     "focal": {
-        "tsinghua",
-        "ustc",
-        "huawei",
-        "mirrorz",
+        "aliyun",
         "packages.ros",
     },
     "jessie": {
@@ -434,6 +439,7 @@ ros2_dist_dic = {
         "ustc",
         "huawei",
         "mirrorz",
+        "aliyun",
         "packages.ros",
     },
     "noble": {
@@ -441,9 +447,15 @@ ros2_dist_dic = {
         "ustc",
         "huawei",
         "mirrorz",
+        "aliyun",
         "packages.ros",
     },
     "resolute": {
+        "tsinghua",
+        "ustc",
+        "huawei",
+        "mirrorz",
+        "aliyun",
         "packages.ros",
     },
     "stretch": {
@@ -466,10 +478,7 @@ ros2_dist_dic = {
         "packages.ros",
     },
     "xenial": {
-        "tsinghua",
-        "ustc",
-        "huawei",
-        "mirrorz",
+        "aliyun",
         "packages.ros",
     },
     "utopic": {
@@ -490,111 +499,126 @@ class Tool(BaseTool):
         self.type = BaseTool.TYPE_INSTALL
         self.author = "小鱼"
 
-    def get_mirror_by_code(self, code, arch="amd64", first_choose="tsinghua"):
+    def get_mirror_by_code(self, code, arch="amd64", first_choose="tsinghua", excluded=None):
         """
         获取镜像通过系统版本号
+        excluded: {"ROS1": set(), "ROS2": set()} 已确认不可用的镜像, 跳过
         """
+        excluded = excluded or {}
         ros1_choose_queue = [first_choose, "tsinghua", "ustc", "huawei", "packages.ros"]
-        ros2_choose_queue = [first_choose, "tsinghua", "ustc", "huawei", "packages.ros"]
+        ros2_choose_queue = [
+            first_choose,
+            "tsinghua",
+            "ustc",
+            "huawei",
+            "aliyun",
+            "packages.ros",
+        ]
 
         # armhf架构，优先使用官方源
         if arch == "armhf":
-            ros2_choose_queue = ["packages.ros", "tsinghua", "ustc", "huawei"]
+            ros2_choose_queue = ["packages.ros", "tsinghua", "ustc", "huawei", "aliyun"]
 
         mirror = []
-        # 确认源里有对应的系统的，比如jammy
-        if code in ros_dist_dic.keys():
-            for item in ros1_choose_queue:
-                if item in ros_dist_dic[code]:
-                    mirror.append(ros_mirror_dic[item]["ROS1"])
+        for version, dist_dic, queue in (
+            ("ROS1", ros_dist_dic, ros1_choose_queue),
+            ("ROS2", ros2_dist_dic, ros2_choose_queue),
+        ):
+            # 确认源里有对应的系统的，比如jammy
+            if code not in dist_dic.keys():
+                continue
+            for item in queue:
+                if item in excluded.get(version, ()):
+                    continue
+                if item in dist_dic[code] and version in ros_mirror_dic[item]:
+                    mirror.append(ros_mirror_dic[item][version])
                     break
-        # 确认源里有对应的系统的，比如jammy
-        if code in ros2_dist_dic.keys():
-            for item in ros2_choose_queue:
-                if item in ros2_dist_dic[code]:
-                    mirror.append(ros_mirror_dic[item]["ROS2"])
-                    break
-        # if code in ['focal']:
-        #     mirror.append(ros_mirror_dic['packages.ros']['ROS2'])
         return mirror
 
     def select_mirror(self):
         """
         让用户选择镜像源
         """
-        # 检查当前系统是否支持中科大镜像
         codename = osversion.get_codename()
+        mirror_names = {
+            "ustc": "中科大镜像源 (推荐国内用户使用)",
+            "tsinghua": "清华镜像源 (容易被封禁)",
+            "huawei": "华为镜像源",
+            "mirrorz": "MirrorZ 校园网联合镜像站",
+            "aliyun": "阿里云镜像源 (仅ROS2, Ubuntu20.04/18.04 装ROS2请选它)",
+        }
         supported_mirrors = []
-
-        if codename in ros_dist_dic.keys() or codename in ros2_dist_dic.keys():
-            if "ustc" in ros_dist_dic.get(codename, []) or "ustc" in ros2_dist_dic.get(
-                codename, []
+        for mirror in mirror_names.keys():
+            if mirror in ros_dist_dic.get(codename, ()) or mirror in ros2_dist_dic.get(
+                codename, ()
             ):
-                supported_mirrors.append("ustc")
+                supported_mirrors.append(mirror)
 
-        if codename in ros_dist_dic.keys() or codename in ros2_dist_dic.keys():
-            if "tsinghua" in ros_dist_dic.get(
-                codename, []
-            ) or "tsinghua" in ros2_dist_dic.get(codename, []):
-                supported_mirrors.append("tsinghua")
+        # 只有官方源或只有一个国内源时不再询问
+        if len(supported_mirrors) <= 1:
+            default = supported_mirrors[0] if supported_mirrors else "packages.ros"
+            PrintUtils.print_info("您的系统默认使用镜像源: {}".format(default))
+            return default
 
-        if codename in ros_dist_dic.keys() or codename in ros2_dist_dic.keys():
-            if "huawei" in ros_dist_dic.get(
-                codename, []
-            ) or "huawei" in ros2_dist_dic.get(codename, []):
-                supported_mirrors.append("huawei")
+        mirror_dict = {}
+        for count, mirror in enumerate(supported_mirrors, 1):
+            mirror_dict[count] = mirror_names[mirror]
+        official = len(supported_mirrors) + 1
+        mirror_dict[official] = "ROS官方源 (国外用户或需要最新版本时使用)"
 
-        # 添加 mirrorz 镜像源支持
-        if codename in ros_dist_dic.keys() or codename in ros2_dist_dic.keys():
-            if "mirrorz" in ros_dist_dic.get(
-                codename, []
-            ) or "mirrorz" in ros2_dist_dic.get(codename, []):
-                supported_mirrors.append("mirrorz")
+        code, result = ChooseTask(
+            mirror_dict,
+            "检测到您的系统支持多个ROS镜像源，请选择您想要使用的ROS镜像源：",
+        ).run()
+        if code == official:
+            return "packages.ros"
+        if code in mirror_dict:
+            return supported_mirrors[code - 1]
+        return supported_mirrors[0]
 
-        # 如果系统支持多个镜像源，则让用户选择
-        if len(supported_mirrors) > 1:
-            mirror_dict = {}
-            count = 1
-            for mirror in supported_mirrors:
-                if mirror == "ustc":
-                    mirror_dict[count] = "中科大镜像源 (推荐国内用户使用)"
-                elif mirror == "tsinghua":
-                    mirror_dict[count] = "清华镜像源 (容易被封禁)"
-                elif mirror == "huawei":
-                    mirror_dict[count] = "华为镜像源"
-                elif mirror == "mirrorz":
-                    mirror_dict[count] = "中山大学开源软件镜像站 (试运行)"
-                count += 1
+    def write_ros_source(self, arch, codename, mirrors):
+        source_data = ""
+        for mirror in mirrors:
+            source_data += "deb [arch={}]  {} {} main\n".format(arch, mirror, codename)
+        FileUtils.delete("/etc/apt/sources.list.d/ros-fish.list")
+        FileUtils.new("/etc/apt/sources.list.d/", "ros-fish.list", source_data)
 
-            mirror_dict[count] = "ROS官方源 (国外用户或需要最新版本时使用)"
-
-            code, result = ChooseTask(
-                mirror_dict,
-                "检测到您的系统支持多个ROS镜像源，请选择您想要使用的ROS镜像源(默认清华)：",
+    def find_stale_mirrors(self, ros_pkg):
+        """
+        国内镜像有时只剩索引、包文件已被删除, apt update 正常, 一安装就满屏 404.
+        这里对每个 ROS 版本抽一个 ros-base 包发 HEAD 请求, 确认真的能下载.
+        返回 {"ROS1"/"ROS2": 镜像名}, 只包含确认 404 的镜像
+        """
+        stale = {}
+        for distro_name in set(ros_pkg.values()):
+            # get_all_instsll_ros_pkgs 返回的是 "foxy" 这样的版本名, 换成真实包名
+            pkg = "ros-{}-ros-base".format(distro_name)
+            result = CmdTask(
+                "apt-get download --print-uris {} 2>/dev/null | head -n 1".format(pkg), 20
             ).run()
-            if code == 0:
-                return "tsinghua"  # 默认返回清华源
-            elif code == count:
-                return "packages.ros"  # 官方源
-            else:
-                # 根据选择返回对应的镜像源
-                for key, value in mirror_dict.items():
-                    if key == code:
-                        if "中科大" in value:
-                            return "ustc"
-                        elif "清华" in value:
-                            return "tsinghua"
-                        elif "华为" in value:
-                            return "huawei"
-                        elif "中山大" in value:
-                            return "mirrorz"
-
-        else:
-            # 系统只支持默认的清华源
-            PrintUtils.print_info("您的系统默认使用清华镜像源")
-            return "tsinghua"
-
-        return "tsinghua"
+            uri = re.findall(r"'([^']+\.deb)'", " ".join(result[1]))
+            if not uri:
+                continue
+            uri = uri[0]
+            check = CmdTask(
+                "curl -sIL -o /dev/null -w '%{{http_code}}' --max-time 15 '{}'".format(uri),
+                20,
+            ).run()
+            http_code = "".join(check[1]).strip()
+            # 只认明确的 403/404/410, 网络超时(000)等不算, 避免误判
+            if http_code not in ("403", "404", "410"):
+                continue
+            plain_uri = uri.replace("https://", "http://")
+            for name, urls in ros_mirror_dic.items():
+                for version, url in urls.items():
+                    if plain_uri.startswith(url.replace("https://", "http://")):
+                        stale[version] = name
+                        PrintUtils.print_warn(
+                            "检测到{}镜像源[{}]索引已过期, 包文件下载返回{}: {}".format(
+                                version, name, http_code, uri
+                            )
+                        )
+        return stale
 
     def add_source(self):
         """
@@ -603,62 +627,71 @@ class Tool(BaseTool):
         arch = AptUtils.getArch()
         if arch == None:
             return False
+        codename = osversion.get_codename()
 
         # 让用户选择镜像源
         selected_mirror = self.select_mirror()
         PrintUtils.print_info("您选择的镜像源: {}".format(selected_mirror))
+        excluded = {"ROS1": set(), "ROS2": set()}
 
-        # add source 1
-        mirrors = self.get_mirror_by_code(
-            osversion.get_codename(), arch=arch, first_choose=selected_mirror
-        )
-        PrintUtils.print_info("根据您的系统和选择，为您推荐安装源为{}".format(mirrors))
-        source_data = ""
-        for mirror in mirrors:
-            source_data += "deb [arch={}]  {} {} main\n".format(
-                arch, mirror, osversion.get_codename()
-            )
-        FileUtils.delete("/etc/apt/sources.list.d/ros-fish.list")
-        FileUtils.new("/etc/apt/sources.list.d/", "ros-fish.list", source_data)
-
-        ros_pkg = self.get_all_instsll_ros_pkgs()
-        if ros_pkg and len(ros_pkg) > 1:
-            PrintUtils.print_success(
-                "恭喜，成功添加ROS源，接下来可以使用apt安装ROS或者使用[1]一键安装ROS安装！"
-            )
-            return
-
-        # 如果第一次尝试失败，让用户重新选择镜像源
-        PrintUtils.print_warn("换源后更新失败，您可以重新选择镜像源再尝试！")
-        retry_mirror = self.select_mirror()
-        while retry_mirror != selected_mirror:
-            PrintUtils.print_info("您重新选择的镜像源: {}".format(retry_mirror))
+        for attempt in range(6):
             mirrors = self.get_mirror_by_code(
-                osversion.get_codename(), arch=arch, first_choose=retry_mirror
+                codename, arch=arch, first_choose=selected_mirror, excluded=excluded
             )
-            PrintUtils.print_info(
-                "根据您的系统和选择，为您推荐安装源为{}".format(mirrors)
-            )
-            source_data = ""
-            for mirror in mirrors:
-                source_data += "deb [arch={}]  {} {} main\n".format(
-                    arch, mirror, osversion.get_codename()
-                )
-            FileUtils.delete("/etc/apt/sources.list.d/ros-fish.list")
-            FileUtils.new("/etc/apt/sources.list.d/", "ros-fish.list", source_data)
+            if not mirrors:
+                break
+            PrintUtils.print_info("根据您的系统和选择，为您推荐安装源为{}".format(mirrors))
+            self.write_ros_source(arch, codename, mirrors)
+
             ros_pkg = self.get_all_instsll_ros_pkgs()
-            if ros_pkg and len(ros_pkg) > 1:
-                PrintUtils.print_success(
-                    "恭喜，成功添加ROS源，接下来可以使用apt安装ROS或者使用[1]一键安装ROS安装！"
-                )
-                return
-            else:
-                PrintUtils.print_warn("换源后更新失败，您可以重新选择镜像源再尝试！")
-                retry_mirror = self.select_mirror()
-        else:
-            PrintUtils.print_error(
-                "您选择了相同的镜像源，四次换源后都失败了，请及时联系小鱼获取解决方案并处理！"
-            )
+            if ros_pkg:
+                stale = self.find_stale_mirrors(ros_pkg)
+                if not stale:
+                    PrintUtils.print_success(
+                        "恭喜，成功添加ROS源，接下来可以使用apt安装ROS或者使用[1]一键安装ROS安装！"
+                    )
+                    return True
+                for version, name in stale.items():
+                    excluded[version].add(name)
+                PrintUtils.print_warn("自动切换到下一个可用的镜像源重试...")
+                continue
+
+            # apt update 失败或搜不到 ROS 包, 让用户换一个镜像源再试
+            PrintUtils.print_warn("换源后更新失败，您可以重新选择镜像源再尝试！")
+            for version in excluded.keys():
+                excluded[version].add(selected_mirror)
+            selected_mirror = self.select_mirror()
+            PrintUtils.print_info("您重新选择的镜像源: {}".format(selected_mirror))
+            for version in excluded.keys():
+                excluded[version].discard(selected_mirror)
+
+        PrintUtils.print_error(
+            "多次换源后仍然失败，请携带 /tmp/fishros_install.log 到鱼香社区 https://fishros.org.cn/forum 一键安装板块反馈！"
+        )
+        return False
+
+    def download_ros_key(self):
+        """
+        依次尝试各个公钥地址, 下载并校验通过后返回本地文件路径.
+        gitee raw 现在会 302 跳到 raw.giteeusercontent.com, curl 必须带 -L, 否则拿到的是一段 HTML
+        """
+        key_file = "/tmp/fishros_ros.asc"
+        PrintUtils.print_success(tr.tr("正在挑选最快的密钥服务:{}").format(key_urls))
+        for key_url in AptUtils.get_fast_url(key_urls):
+            CmdTask("rm -f {}".format(key_file), 3).run()
+            result = CmdTask(
+                "curl -fsSL --retry 2 --max-time 30 {} -o {}".format(key_url, key_file), 40
+            ).run()
+            if result[0] != 0:
+                continue
+            check = CmdTask(
+                "grep -q 'BEGIN PGP PUBLIC KEY BLOCK' {}".format(key_file), 3
+            ).run()
+            if check[0] == 0:
+                PrintUtils.print_success(tr.tr("已自动选择最快密钥服务:{}").format(key_url))
+                return key_file
+            PrintUtils.print_warn("{} 返回的不是有效公钥, 尝试下一个地址".format(key_url))
+        return None
 
     def add_key(self):
         PrintUtils.print_success(
@@ -671,60 +704,39 @@ class Tool(BaseTool):
         AptUtils.install_pkg("curl")
         AptUtils.install_pkg("gnupg2")
 
-        # add key
-        PrintUtils.print_success(tr.tr("正在挑选最快的密钥服务:{}").format(key_urls))
-        key_url = AptUtils.get_fast_url(key_urls)
-        if not key_url:
-            PrintUtils.print_error(tr.tr("获取密钥失败"))
-            return
-        key_url = key_url[0]
-        PrintUtils.print_success(tr.tr("已自动选择最快密钥服务:{}").format(key_url))
-
-        has_apt_key = CmdTask("command -v apt-key", 10).run()[0] == 0
-        if has_apt_key:
+        cmd_result = (1, [], [])
+        key_file = self.download_ros_key()
+        if key_file:
+            # 统一导入 trusted.gpg.d, 新旧系统都认, 不依赖已弃用的 apt-key
             cmd_result = CmdTask(
-                "curl -s {} | sudo apt-key add -".format(key_url)
+                "sudo gpg --batch --yes --dearmor -o {0} {1} && sudo chmod 644 {0}".format(
+                    ros_keyring, key_file
+                ),
+                20,
             ).run()
-            if cmd_result[0] != 0:
-                cmd_result = CmdTask(
-                    "curl -s {} | sudo apt-key add -".format(key_url)
-                ).run()
-            # 针对近期密钥更新问题
-            CmdTask(
-                "sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F42ED6FBAB17C654",
-                10,
+            if cmd_result[0] != 0 and CmdTask("command -v apt-key", 10).run()[0] == 0:
+                cmd_result = CmdTask("sudo apt-key add {}".format(key_file), 20).run()
+
+        if cmd_result[0] != 0:
+            PrintUtils.print_info(tr.tr("导入密钥失败，开始更换导入方式并二次尝试..."))
+            # 11371 端口经常不通, 走 80 端口; 用完整指纹
+            tmp_keyring = "/tmp/fishros_ros_keyring.gpg"
+            cmd_result = CmdTask(
+                "sudo rm -f {1} && "
+                "sudo gpg --batch --no-default-keyring --keyring {1} "
+                "--keyserver hkp://keyserver.ubuntu.com:80 --recv-keys {0} && "
+                "sudo gpg --batch --no-default-keyring --keyring {1} --export {0} "
+                "| sudo tee {2} > /dev/null && sudo chmod 644 {2}".format(
+                    ros_key_fingerprint, tmp_keyring, ros_keyring
+                ),
+                60,
             ).run()
-            if cmd_result[0] != 0:
-                PrintUtils.print_info(
-                    tr.tr("导入密钥失败，开始更换导入方式并二次尝试...")
-                )
-                cmd_result = CmdTask(
-                    "sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F42ED6FBAB17C654",
-                    10,
-                ).run()
-        else:
-            PrintUtils.print_info(
-                tr.tr("检测到系统未提供apt-key，切换为gpg keyring导入方式...")
+
+        if cmd_result[0] != 0:
+            PrintUtils.print_error(
+                tr.tr("获取密钥失败")
+                + ", 后续 apt update 可能报 NO_PUBKEY, 请检查网络后重试"
             )
-            cmd_result = CmdTask(
-                "curl -fsSL {} | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/ros.gpg".format(
-                    key_url
-                )
-            ).run()
-            if cmd_result[0] == 0:
-                CmdTask("sudo chmod 644 /etc/apt/trusted.gpg.d/ros.gpg", 10).run()
-
-        # 针对trusted.gpg.d问题解决方案
-        if FileUtils.check_result(cmd_result, ["trusted.gpg.d"]):
-            cmd_result = CmdTask(
-                "curl -s {} | sudo gpg --no-default-keyring --keyring gnupg-ring:/etc/apt/trusted.gpg.d/ros.gpg --import".format(
-                    key_url
-                )
-            ).run()
-            cmd_result = CmdTask(
-                "sudo chmod 644 /etc/apt/trusted.gpg.d/ros.gpg", 10
-            ).run()
-
         return cmd_result
 
     def check_sys_source(self):
@@ -919,24 +931,52 @@ class Tool(BaseTool):
                     os_command=False,
                 ).run()
 
+        # 个别包下载中断(网络抖动/镜像临时不可用)时, 刷新索引后补下一次
+        if cmd_result[0] != 0 and FileUtils.check_result(
+            cmd_result, ["Unable to fetch some archives", "--fix-missing", "无法下载"]
+        ):
+            PrintUtils.print_warn("部分软件包下载失败, 刷新软件源后重试一次...")
+            CmdTask("sudo apt update", 100).run()
+            target = (
+                dic_base[install_version]
+                if code == 2
+                else RosVersions.get_desktop_version(install_version)
+            )
+            cmd_result = CmdTask(
+                "sudo {} install --fix-missing {} -y".format(install_tool_apt, target),
+                300,
+                os_command=False,
+            ).run()
+
         # apt broken error
         if cmd_result[0] != 0:
             if FileUtils.check_result(cmd_result, ["--fix-broken install"]):
                 CmdTask("sudo apt --fix-broken install -y").run()
+                # rosname 是 "foxy(ROS2)" 这种展示名, 包名要用 install_version 换算
                 if code == 2:
                     cmd_result = CmdTask(
                         "sudo {} install   {} -y".format(
-                            install_tool, dic_base[rosname]
+                            install_tool_apt, dic_base[install_version]
                         ),
                         300,
                         os_command=False,
                     ).run()
                 elif code == 1:
                     cmd_result = CmdTask(
-                        "sudo {} install   {} -y".format(install_tool, rosname),
+                        "sudo {} install   {} -y".format(
+                            install_tool_apt,
+                            RosVersions.get_desktop_version(install_version),
+                        ),
                         300,
                         os_command=False,
                     ).run()
+
+        if cmd_result[0] != 0 and FileUtils.check_result(
+            cmd_result, [r"404\s+Not Found"]
+        ):
+            PrintUtils.print_warn(
+                "安装过程中出现 404, 说明当前ROS镜像源缺包, 请重新运行一键安装并换一个ROS镜像源(阿里云或ROS官方源)"
+            )
 
         # 安装额外的依赖
         RosVersions.install_depend(install_version)
