@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 from .base import BaseTool
 from .base import PrintUtils,CmdTask,FileUtils,AptUtils,ChooseTask
 from .base import osversion
@@ -18,11 +19,26 @@ deb <sources>/ <code-name>-updates main restricted universe multiverse
 deb <sources>/ <code-name>-backports main restricted universe multiverse
 deb <sources>/ <code-name>-security main restricted universe multiverse
 """
-debian_amd64_sources_template = """
+# Debian 10 及更早: 安全源路径是 <code-name>/updates
+debian_old_sources_template = """
 deb <sources>/ <code-name> main contrib non-free
 deb <sources>/ <code-name>-updates main contrib non-free
 deb <sources>/ <code-name>-backports main contrib non-free
 deb <sources>-security <code-name>/updates main contrib non-free
+"""
+# Debian 11 起: 安全源改为 <code-name>-security
+debian_amd64_sources_template = """
+deb <sources>/ <code-name> main contrib non-free
+deb <sources>/ <code-name>-updates main contrib non-free
+deb <sources>/ <code-name>-backports main contrib non-free
+deb <sources>-security/ <code-name>-security main contrib non-free
+"""
+# Debian 12 起: 固件单独拆到 non-free-firmware
+debian_firmware_sources_template = """
+deb <sources>/ <code-name> main contrib non-free non-free-firmware
+deb <sources>/ <code-name>-updates main contrib non-free non-free-firmware
+deb <sources>/ <code-name>-backports main contrib non-free non-free-firmware
+deb <sources>-security/ <code-name>-security main contrib non-free non-free-firmware
 """
 ubuntu_ports_deb822_template = """
 Types: deb
@@ -52,12 +68,16 @@ Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 """
 
+# Ubuntu 24.04 起默认使用 deb822 格式的 ubuntu.sources, 不再用 sources.list
+ubuntu_deb822_file = '/etc/apt/sources.list.d/ubuntu.sources'
+
 
 class Tool(BaseTool):
     def __init__(self):
         self.type = BaseTool.TYPE_CONFIG
         self.name = "一键更换系统源"
         self.author = '小鱼'
+        self.use_deb822 = False
 
 
     def add_ros_source(self):
@@ -73,33 +93,45 @@ class Tool(BaseTool):
     def clean_old_source(self):
         dic = {1:"仅更换系统源",2:"更换系统源并清理第三方源"}
         code,result = ChooseTask(dic, "请选择换源方式,如果不知道选什么请选2").run()
+        # 删除之前先记下系统是否使用 deb822 格式(24.04+), 否则清理三方源时会连 ubuntu.sources 一起删掉, 就判断不出来了
+        self.use_deb822 = os.path.exists(ubuntu_deb822_file)
+        backup = '/etc/apt/ubuntu.sources.fishros.bak'
+        if self.use_deb822 and not os.path.exists(backup):
+            CmdTask('sudo cp {} {}'.format(ubuntu_deb822_file, backup)).run()
         FileUtils.delete('/etc/apt/sources.list')
-        if code==2: 
+        if code==2:
             print("删除一个资源文件")
             FileUtils.delete('/etc/apt/sources.list.d')
-            # fix add source failed before config system source 
+            # fix add source failed before config system source
             CmdTask('sudo mkdir -p /etc/apt/sources.list.d').run()
-        
+
         # 添加选择源的方式
         PrintUtils.print_info("源选择方式说明:")
         PrintUtils.print_info("1. 自动测速选择最快的源: 系统将自动测试各个源的速度，并选择最快的源")
         PrintUtils.print_info("2. 根据测速结果手动选择源: 系统将测试各个源的速度，然后让您从测试结果中选择")
-        
+
         dic_source_method = {1:"自动测速选择最快的源", 2:"根据测速结果手动选择源"}
         self.source_method_code, _ = ChooseTask(dic_source_method, "请选择源的选择方式").run()
+
+    def get_debian_template(self, codename):
+        if codename in ('wheezy', 'jessie', 'stretch', 'buster'):
+            return debian_old_sources_template
+        if codename == 'bullseye':
+            return debian_amd64_sources_template
+        return debian_firmware_sources_template
 
     def get_source_by_system(self,system,codename,arch,failed_sources=[], return_all=False):
         # 实际测试发现，阿里云虽然延时很低，但是带宽也低的离谱，一点都不用心，删掉了
         ubuntu_amd64_sources = [
             "https://mirrors.tuna.tsinghua.edu.cn/ubuntu",
-            "https://mirror.sysu.edu.cn/ubuntu/",
+            "https://mirror.sysu.edu.cn/ubuntu",
             # "https://mirrors.aliyun.com/ubuntu",
             # "https://mirrors.163.com/ubuntu",
             "https://mirrors.ustc.edu.cn/ubuntu",
             "https://archive.ubuntu.com/ubuntu",
             "https://mirrors.kernel.org/ubuntu",
             "http://mirrors.tuna.tsinghua.edu.cn/ubuntu",
-            "http://mirror.sysu.edu.cn/ubuntu/",
+            "http://mirror.sysu.edu.cn/ubuntu",
             # "http://mirrors.aliyun.com/ubuntu",
             # "http://mirrors.163.com/ubuntu",
             "http://mirrors.ustc.edu.cn/ubuntu",
@@ -107,141 +139,57 @@ class Tool(BaseTool):
             "http://mirrors.kernel.org/ubuntu",
         ]
         ubuntu_ports_sources = [
-            "https://ports.ubuntu.com/ubuntu-ports",
-            # "https://mirrors.aliyun.com/ubuntu-ports",
             "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports",
-            "https://mirror.sysu.edu.cn/ubuntu-ports/",
+            "https://mirror.sysu.edu.cn/ubuntu-ports",
+            "https://mirrors.ustc.edu.cn/ubuntu-ports",
             "https://ports.ubuntu.com/ubuntu-ports",
-            # "https://mirrors.aliyun.com/ubuntu-ports",
-            "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports",
-             "http://ports.ubuntu.com/ubuntu-ports",
-            # "https://mirrors.aliyun.com/ubuntu-ports",
             "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports",
-            "http://mirror.sysu.edu.cn/ubuntu-ports/",
+            "http://mirror.sysu.edu.cn/ubuntu-ports",
+            "http://mirrors.ustc.edu.cn/ubuntu-ports",
             "http://ports.ubuntu.com/ubuntu-ports",
-            # "https://mirrors.aliyun.com/ubuntu-ports",
-            "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports",
         ]
-        debian_amd64_sources = [
+        # Debian 的镜像不区分架构, arm64/armhf 和 amd64 用同一套地址
+        debian_sources = [
             "https://mirrors.tuna.tsinghua.edu.cn/debian",
-            "https://mirror.sysu.edu.cn/debian/",
+            "https://mirror.sysu.edu.cn/debian",
             "https://mirrors.aliyun.com/debian",
             # "https://mirrors.163.com/debian",
             "https://mirrors.ustc.edu.cn/debian",
             "https://deb.debian.org/debian",
-            "https://mirrors.kernel.org/debian",
             "http://mirrors.tuna.tsinghua.edu.cn/debian",
-            "http://mirror.sysu.edu.cn/debian/",
+            "http://mirror.sysu.edu.cn/debian",
             "http://mirrors.aliyun.com/debian",
             # "http://mirrors.163.com/debian",
             "http://mirrors.ustc.edu.cn/debian",
             "http://deb.debian.org/debian",
-            "http://mirrors.kernel.org/debian",
         ]
         sources = []
         template = ubuntu_amd64_sources_template
         if system=='ubuntu':
             if arch=='amd64':
                 sources = ubuntu_amd64_sources
-                template = ubuntu_amd64_sources_template
+                template = ubuntu_amd64_deb822_template if self.use_deb822 else ubuntu_amd64_sources_template
             else:
                 sources = ubuntu_ports_sources
-                template = ubuntu_ports_sources_template
+                template = ubuntu_ports_deb822_template if self.use_deb822 else ubuntu_ports_sources_template
         elif system=='debian':
-            if arch=='amd64':
-                template = debian_amd64_sources_template
-                sources = debian_amd64_sources
+            template = self.get_debian_template(codename)
+            sources = debian_sources
+
+        sources = [source for source in sources if source not in failed_sources]
+        if len(sources) == 0:
+            return None, None
         PrintUtils.print_delay('搜索到可用源:{}'.format(sources),0.002)
         PrintUtils.print_delay('接下来将进行自动测速以为您选择最快的源:')
         fast_source = AptUtils.get_fast_url(sources)
-        
-        # 如果需要返回所有源和模板（不进行测速）
-        if return_all:
-            # 直接返回源列表和模板
-            if len(failed_sources) > 0:
-                filtered_sources = [source for source in sources if source not in failed_sources]
-                return filtered_sources, template
-            return sources, template
-            
-        # 正常返回最快的源
-        if len(failed_sources)>0:
-            PrintUtils.print_warn('接下来为您排除已经失败的源')
-            for source in fast_source:
-                if source in failed_sources:
-                    PrintUtils.print_info('{} 已经测试失败，跳过!'.format(source))
-                else:
-                    return source,template
-        else:
-            return fast_source[0],template
-        return None,None
-        
-        for source in sources:
-            if "tsinghua" in source:
-                tsinghua_sources.append(source)
-            elif "ustc" in source:
-                ustc_sources.append(source)
-            elif "archive.ubuntu" in source or "deb.debian" in source:
-                official_sources.append(source)
-            elif "kernel" in source:
-                kernel_sources.append(source)
-            elif "aliyun" in source:
-                aliyun_sources.append(source)
-            else:
-                other_sources.append(source)
-        
-        # 添加到选择字典
-        index = 1
-        
-        # 添加清华源
-        if tsinghua_sources:
-            for source in tsinghua_sources:
-                source_dict[index] = source
-                index += 1
-        
-        # 添加中科大源
-        if ustc_sources:
-            for source in ustc_sources:
-                source_dict[index] = source
-                index += 1
-        
-        # 添加阿里云源
-        if aliyun_sources:
-            for source in aliyun_sources:
-                source_dict[index] = source
-                index += 1
-        
-        # 添加官方源
-        if official_sources:
-            for source in official_sources:
-                source_dict[index] = source
-                index += 1
-        
-        # 添加kernel源
-        if kernel_sources:
-            for source in kernel_sources:
-                source_dict[index] = source
-                index += 1
-        
-        # 添加其他源
-        if other_sources:
-            for source in other_sources:
-                source_dict[index] = source
-                index += 1
-        
-        PrintUtils.print_info("请选择您想使用的镜像源:")
-        code, source = ChooseTask(source_dict, "请选择一个镜像源").run()
-        
-        if not source:
+        if len(fast_source) == 0:
             return None, None
-        
-        return source, template
-        
-        # 去除末尾的斜杠
-        if source.endswith("/"):
-            source = source[:-1]
-        
-        return source, template
-    
+
+        # 手动选择时返回按测速排序后的全部源
+        if return_all:
+            return fast_source, template
+        return fast_source[0], template
+
     def replace_source(self,failed_sources=[]):
         arch = AptUtils.getArch()
         name = osversion.get_name()
@@ -251,71 +199,54 @@ class Tool(BaseTool):
         elif name.find("debian")>=0:
             system = 'debian'
         else:
+            PrintUtils.print_error('当前系统{}暂不支持一键换源'.format(name))
             return None
-        
+        if not codename:
+            PrintUtils.print_error('获取系统代号失败, 无法自动换源, 请检查 /etc/os-release')
+            return None
+
         PrintUtils.print_delay('检测到当前系统:{} 架构:{} 代号:{},正在为你搜索适合的源...'.format(system,arch,codename))
-        
+
         # 根据用户选择的方式获取源
-        if hasattr(self, 'source_method_code'):
-            if self.source_method_code == 2:
-                # 根据测速结果手动选择源
-                sorted_sources, template = self.get_source_by_system(system, codename, arch, failed_sources, return_all=True)
-                if not sorted_sources:
-                    return None
-                
-                # 创建选择字典
-                source_dict = {}
-                for i, src in enumerate(sorted_sources, 1):
-                    source_dict[i] = src
-                
-                PrintUtils.print_info("请从测速结果中选择您想使用的镜像源:")
-                code, source = ChooseTask(source_dict, "请选择一个镜像源").run()
-                
-                if not source:
-                    return None
-            else:
-                # 自动测速选择源
-                source, template = self.get_source_by_system(system, codename, arch, failed_sources)
+        if getattr(self, 'source_method_code', 1) == 2:
+            # 根据测速结果手动选择源
+            sorted_sources, template = self.get_source_by_system(system, codename, arch, failed_sources, return_all=True)
+            if not sorted_sources:
+                return None
+            source_dict = {}
+            for i, src in enumerate(sorted_sources, 1):
+                source_dict[i] = src
+            PrintUtils.print_info("请从测速结果中选择您想使用的镜像源:")
+            code, source = ChooseTask(source_dict, "请选择一个镜像源").run()
+            if not source:
+                return None
+            PrintUtils.print_success('您选择的镜像源:{}'.format(source))
         else:
             # 自动测速选择源
             source, template = self.get_source_by_system(system, codename, arch, failed_sources)
-        
-        if not source: return None
-        
-        if hasattr(self, 'source_method_code'):
-            if self.source_method_code == 2:
-                PrintUtils.print_success('您选择的镜像源:{}'.format(source))
-            else:
-                PrintUtils.print_success('为您选择最快镜像源:{}'.format(source))
-        else:
+            if not source: return None
             PrintUtils.print_success('为您选择最快镜像源:{}'.format(source))
-            
-        # 使用已修复的 FileUtils.new 方法
-        FileUtils.new('/etc/apt/','sources.list',template.replace("<code-name>",codename).replace('<sources>',source))
+
+        data = template.replace("<code-name>",codename).replace('<sources>',source.rstrip('/'))
+        if self.use_deb822:
+            FileUtils.new('/etc/apt/sources.list.d/','ubuntu.sources',data)
+        else:
+            FileUtils.new('/etc/apt/','sources.list',data)
         return source
-        
+
 
     def change_sys_source(self):
         self.clean_old_source()
 
         failed_sources = []
+        result = (-1, [], [])
         source = self.replace_source(failed_sources)
         if source:
             PrintUtils.print_delay("替换镜像源完成，尝试进行更新....")
             result = CmdTask('sudo apt update',100).run()
-            
-            # 如果是手动选择源且更新失败，提示用户重新选择
-            if result[0] != 0 and hasattr(self, 'source_method_code') and self.source_method_code == 2:
-                PrintUtils.print_warn("您选择的源更新失败，请重新选择其他源")
-                while result[0] != 0:
-                    failed_sources.append(source)
-                    source = self.replace_source(failed_sources)
-                    if not source:
-                        PrintUtils.print_error("没有找到合适的镜像源,臣妾告退!")
-                        return
-                    result = CmdTask('sudo apt update',100).run()
-            # 如果是自动测速选择源且更新失败，自动尝试其他源
-            elif result[0] != 0:
+            if result[0] != 0:
+                if getattr(self, 'source_method_code', 1) == 2:
+                    PrintUtils.print_warn("您选择的源更新失败，请重新选择其他源")
                 while result[0] != 0:
                     failed_sources.append(source)
                     PrintUtils.print_warn("更新失败，尝试更换其他源")
@@ -327,33 +258,7 @@ class Tool(BaseTool):
         else:
             PrintUtils.print_error("没有找到合适的镜像源,臣妾告退!")
 
-#         # update
-#         PrintUtils.print_delay("替换完成，尝试第一次更新....")
-#         result = CmdTask('sudo apt update',100).run()
-#         # https error update second
-#         if result[0]!= 0 and FileUtils.check_result(result[1]+result[2],['Certificate verification','证书']):
-#             PrintUtils.print_delay("发生证书错误，尝试第二次更新....")
-#             FileUtils.delete('/etc/apt/sources.list')
-#             FileUtils.new('/etc/apt/','sources.list',source.replace("https://","http://").replace("<code-name>",osversion.get_codename()))
-#             result = CmdTask('sudo apt update',100).run()
-#         if result[0]!=0:
-#             PrintUtils.print_info("更新失败，开始更换导入方式并三次尝试...")
-#             result = CmdTask("sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9",10).run()
-#             result = CmdTask("sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys DCC9EFBF77E11517",10).run()
-#             result = CmdTask("sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 54404762BBB6E853",10).run()
-#             result = CmdTask("sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F42ED6FBAB17C654",10).run()
-#             # sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 
-#             # result = CmdTask("apt-get install debian-keyring debian-archive-keyring",10).run()
-#             result = CmdTask("apt-key update",10).run()
-#             result = CmdTask('sudo apt update',100).run()
-#         if result[0]!=0:
-#             PrintUtils.print_info("""如果出现问题NO_PUBKEY XXXXXXXX，请手动运行添加指令：apt-key adv --keyserver keyserver.ubuntu.com --recv-keys XXXXXXXX
-# 如：error： NO_PUBKEY 0E98404D386FA1D9
-# 运行指令：sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9
-#             """)
-#         # final check
-
-        if result[0]==0: 
+        if result[0]==0:
             PrintUtils.print_success("搞定了,不信你看,累死宝宝了，还不快去给小鱼点个赞~")
             PrintUtils.print_info(result[1])
         PrintUtils.print_success("镜像更新完成.....")
