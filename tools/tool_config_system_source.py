@@ -313,15 +313,20 @@ class Tool(BaseTool):
         """
         if not getattr(self, 'current_source', None):
             return None
-        self.failed_sources.append(self.current_source)
+        self.exclude_server(self.current_source)
         source = self.replace_source(self.failed_sources)
         while source:
             if CmdTask('sudo apt update', 100).run()[0] == 0:
                 self.current_source = source
                 return source
-            self.failed_sources.append(source)
+            self.exclude_server(source)
             source = self.replace_source(self.failed_sources)
         return None
+
+    def exclude_server(self, source):
+        """同一台服务器的 http/https 地址一起排除, 否则"换镜像"可能只是换了个协议"""
+        address = source.split('://', 1)[-1]
+        self.failed_sources.extend(['http://' + address, 'https://' + address])
 
     def run(self):
         # 正式的运行
