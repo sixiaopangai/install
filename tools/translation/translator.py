@@ -29,7 +29,8 @@ class Linguist:
         self.country = 'CN'
         self._currentLocale = self.getLocalFromIP()
         if self._currentLocale is None:
-            self._currentLocale = locale.getdefaultlocale()[0]
+            # 查不到 IP 所在国家(断网、DNS 故障、接口不可用)时按系统语言来, 而不是一律英文
+            self._currentLocale = self.getLocalFromSystem()
         # Load the translation file.
         self.lang = self._currentLocale
         # Create directory for downloads
@@ -77,6 +78,21 @@ class Linguist:
     def isCN(self) -> bool:
         return self.country == 'CN'
     
+    @staticmethod
+    def getLocalFromSystem() -> str:
+        """
+        按系统语言选: 英文系统用英文, 其它情况(中文、C/POSIX 等没有语言偏好)用中文(工具本身的语言).
+        直接读环境变量: locale.getdefaultlocale() 会把 C.UTF-8 规范化成 en_US, 不能用
+        """
+        system_locale = ""
+        for name in ("LC_ALL", "LC_MESSAGES", "LANG"):
+            if os.environ.get(name):
+                system_locale = os.environ[name].lower()
+                break
+        if system_locale.startswith("en"):
+            return "en_US"
+        return "zh_CN"
+
     def getLocalFromIP(self) -> str:
         local_str = ""
         temp_file = "/tmp/fishros_check_country.xml"
@@ -95,9 +111,9 @@ class Linguist:
                 else:
                     local_str = "en_US"
             else:
-                local_str = "en_US"
+                local_str = None
         except Exception:
-            local_str = "en_US"
+            local_str = None
         finally:
             try:
                 os.remove(temp_file)
