@@ -9,7 +9,8 @@ fi
 # 结果要么没有菜单直接退出, 要么跑的是旧脚本, 所以每次先清掉
 $SUDO rm -rf /tmp/fishinstall/
 mkdir -p /tmp/fishinstall/tools/translation/assets
-wget -q $FISHROS_URL/install.py -O /tmp/fishinstall/install.py
+# 与 install.py 里其它下载保持一致不校验证书: 老系统证书库过旧、树莓派等开机时钟不准时, 服务器跳转到 https 也能下载
+wget -q --no-check-certificate $FISHROS_URL/install.py -O /tmp/fishinstall/install.py
 source /etc/profile
 
 if [ -s /tmp/fishinstall/install.py ]; then
@@ -17,7 +18,7 @@ if [ -s /tmp/fishinstall/install.py ]; then
     $SUDO python3 /tmp/fishinstall/install.py
 else
     echo "下载一键安装脚本失败: ${FISHROS_URL}install.py"
-    echo "请检查网络后重试; 如果提示证书相关错误, 请先执行 sudo apt install -y ca-certificates"
+    echo "请检查网络后重试(能否打开 ${FISHROS_URL}install.py)"
 fi
 $SUDO rm -rf /tmp/fishinstall/
 
