@@ -197,6 +197,8 @@ key_urls = [
 # ROS 官方 GPG 公钥完整指纹, 密钥服务器兜底时使用(短指纹容易撞)
 ros_key_fingerprint = "C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654"
 ros_keyring = "/etc/apt/trusted.gpg.d/ros.gpg"
+# 没有 gpg 时的退路: apt>=1.4(Ubuntu 18.04+) 能直接识别 trusted.gpg.d 下 ASCII 格式的 .asc 公钥
+ros_keyring_asc = "/etc/apt/trusted.gpg.d/ros.asc"
 
 ros_mirror_dic = {
     "tsinghua": {
@@ -583,6 +585,26 @@ class Tool(BaseTool):
         FileUtils.delete("/etc/apt/sources.list.d/ros-fish.list")
         FileUtils.new("/etc/apt/sources.list.d/", "ros-fish.list", source_data)
 
+    @staticmethod
+    def has_command(name):
+        return CmdTask("command -v {}".format(name), 5).run()[0] == 0
+
+    def http_status(self, url):
+        """
+        返回 url 跟随跳转后的 HTTP 状态码, 取不到返回空串.
+        Ubuntu 22.04/24.04 桌面版默认没装 curl, 系统源坏了又装不上时用 wget 兜底
+        """
+        if self.has_command("curl"):
+            check = CmdTask(
+                "curl -sIL -o /dev/null -w '%{{http_code}}' --max-time 15 '{}'".format(url), 20
+            ).run()
+            return "".join(check[1]).strip()
+        check = CmdTask(
+            "wget --spider -S --timeout=15 --tries=1 '{}' 2>&1 | grep 'HTTP/'".format(url), 20
+        ).run()
+        codes = re.findall(r"HTTP/[\d.]+ (\d+)", " ".join(check[1]))
+        return codes[-1] if codes else ""
+
     def find_stale_mirrors(self, ros_pkg):
         """
         国内镜像有时只剩索引、包文件已被删除, apt update 正常, 一安装就满屏 404.
@@ -600,11 +622,7 @@ class Tool(BaseTool):
             if not uri:
                 continue
             uri = uri[0]
-            check = CmdTask(
-                "curl -sIL -o /dev/null -w '%{{http_code}}' --max-time 15 '{}'".format(uri),
-                20,
-            ).run()
-            http_code = "".join(check[1]).strip()
+            http_code = self.http_status(uri)
             # 只认明确的 403/404/410, 网络超时(000)等不算, 避免误判
             if http_code not in ("403", "404", "410"):
                 continue
@@ -711,12 +729,15 @@ class Tool(BaseTool):
         gitee raw 现在会 302 跳到 raw.giteeusercontent.com, curl 必须带 -L, 否则拿到的是一段 HTML
         """
         key_file = "/tmp/fishros_ros.asc"
+        # wget 一定有(用户就是用它下载的一键安装), curl 不一定
+        if self.has_command("curl"):
+            download = "curl -fsSL --retry 2 --max-time 30 {url} -o {out}"
+        else:
+            download = "wget -q --tries=2 --timeout=30 -O {out} {url}"
         PrintUtils.print_success(tr.tr("正在挑选最快的密钥服务:{}").format(key_urls))
         for key_url in AptUtils.get_fast_url(key_urls):
             CmdTask("rm -f {}".format(key_file), 3).run()
-            result = CmdTask(
-                "curl -fsSL --retry 2 --max-time 30 {} -o {}".format(key_url, key_file), 40
-            ).run()
+            result = CmdTask(download.format(url=key_url, out=key_file), 40).run()
             if result[0] != 0:
                 continue
             check = CmdTask(
@@ -749,7 +770,16 @@ class Tool(BaseTool):
                 ),
                 20,
             ).run()
-            if cmd_result[0] != 0 and CmdTask("command -v apt-key", 10).run()[0] == 0:
+            if cmd_result[0] != 0:
+                # 没有 gpg(精简系统/容器, 或系统源坏了装不上 gnupg)时直接放 .asc 公钥
+                PrintUtils.print_info("gpg 不可用, 改为直接导入 ASCII 格式公钥")
+                cmd_result = CmdTask(
+                    "sudo rm -f {0} && sudo cp {1} {2} && sudo chmod 644 {2}".format(
+                        ros_keyring, key_file, ros_keyring_asc
+                    ),
+                    10,
+                ).run()
+            if cmd_result[0] != 0 and self.has_command("apt-key"):
                 cmd_result = CmdTask("sudo apt-key add {}".format(key_file), 20).run()
 
         if cmd_result[0] != 0:
