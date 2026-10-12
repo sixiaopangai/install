@@ -13,6 +13,7 @@ common_pkgs = {
         ("建图 slam_toolbox", ["slam-toolbox"]),
         ("建图 Cartographer", ["cartographer-ros", "cartographer-rviz"]),
         ("键盘遥控", ["teleop-twist-keyboard"]),
+        ("手柄遥控(USB 接收器/有线手柄)", ["joy", "teleop-twist-joy"]),
         ("机器人模型 xacro / 关节调试界面", ["xacro", "joint-state-publisher-gui"]),
         ("多传感器融合定位", ["robot-localization"]),
     ],
@@ -21,12 +22,16 @@ common_pkgs = {
         ("建图 gmapping", ["slam-gmapping"]),
         ("建图 Cartographer", ["cartographer-ros"]),
         ("键盘遥控", ["teleop-twist-keyboard"]),
+        ("手柄遥控(USB 接收器/有线手柄)", ["joy", "teleop-twist-joy"]),
         ("机器人模型 xacro / 关节调试界面", ["xacro", "joint-state-publisher-gui"]),
         ("多传感器融合定位", ["robot-localization"]),
     ],
 }
 # 与 ROS 版本无关的系统包: 串口通信, 机器人底盘驱动常用
-system_pkgs = [("串口通信 pyserial", ["python3-serial"])]
+system_pkgs = [
+    ("串口通信 pyserial", ["python3-serial"]),
+    ("手柄测试工具 jstest", ["joystick"]),
+]
 
 
 class Tool(BaseTool):
@@ -67,6 +72,7 @@ class Tool(BaseTool):
         为指定 ROS 版本安装常用功能包. auto=True 时不再询问(全自动模式调用)
         返回是否全部安装成功
         """
+        AptUtils.wait_and_repair()
         AptUtils.checkapt()
         groups = self.plan(version)
         if not groups:
@@ -94,7 +100,22 @@ class Tool(BaseTool):
             PrintUtils.print_info("可以稍后手动重试: sudo apt install -y {}".format(" ".join(failed)))
             return False
         PrintUtils.print_success("常用功能包已全部装好, 新开终端即可使用")
+        self.print_joy_tips(version)
         return True
+
+    @staticmethod
+    def print_joy_tips(version):
+        info = RosVersions.get_version(version)
+        ros1 = info is not None and info.version == "ROS1"
+        PrintUtils.print_info("手柄怎么用: 插上 USB 接收器(虚拟机要在 VMware 菜单「虚拟机 > 可移动设备」里把它连到虚拟机)")
+        PrintUtils.print_info("  1. 测试手柄是否被识别: jstest /dev/input/js0   (按键/摇杆时数字会变化)")
+        if ros1:
+            PrintUtils.print_info("  2. 读取手柄数据: rosrun joy joy_node, 另开终端 rostopic echo /joy")
+            PrintUtils.print_info("  3. 手柄控制机器人: roslaunch teleop_twist_joy teleop.launch joy_config:=xbox")
+        else:
+            PrintUtils.print_info("  2. 读取手柄数据: ros2 run joy joy_node, 另开终端 ros2 topic echo /joy")
+            PrintUtils.print_info("  3. 手柄控制机器人: ros2 launch teleop_twist_joy teleop-launch.py joy_config:=xbox")
+        PrintUtils.print_info("     (teleop_twist_joy 默认要按住使能键才会发速度, 不同手柄键位可换 joy_config:=ps3 等)")
 
     def run(self):
         versions = self.installed_ros()
