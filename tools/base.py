@@ -1030,22 +1030,24 @@ class CmdTask(Task):
         return re.sub(r"(^|[|;&(]\s*)sudo\s+(?:-E\s+)?", r"\1", command)
 
     def getlog(self, callback=None):
-        stdout_line = ""
-        for line in iter(self.sub.stdout.readline, "b"):
+        # stdout 和 stderr 要同时读: 原来读完 stdout 才读 stderr, 子进程往 stderr 写满管道缓冲(64KB)后
+        # 会阻塞不退出, stdout 也就一直不结束, 两边互相等待. apt 一次装近千个包时实测会这样卡死
+        def read_stderr():
+            for line in iter(self.sub.stderr.readline, ""):
+                line = line.rstrip()
+                if callback and line:
+                    callback(line, "err")
+
+        err_thread = threading.Thread(target=read_stderr)
+        err_thread.daemon = True
+        err_thread.start()
+
+        for line in iter(self.sub.stdout.readline, ""):
             line = line.rstrip()  # .decode('utf8', errors="ignore")
             if callback and line:
                 callback(line, "out")
-            if subprocess.Popen.poll(self.sub) is not None:
-                if line == "":
-                    break
-
-        for line in iter(self.sub.stderr.readline, "b"):
-            line = line.rstrip()  # .decode('utf8', errors="ignore")
-            if callback and line:
-                callback(line, "err")
-            if subprocess.Popen.poll(self.sub) is not None:
-                if line == "":
-                    break
+        self.sub.wait()
+        err_thread.join(timeout=5)
 
     def getlogs(self):
         out = []
