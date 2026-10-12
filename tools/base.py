@@ -1226,8 +1226,8 @@ class ChooseWithCategoriesTask(Task):
         # 打印不同类型工具的分类结果
         for tool_type, tools_list in dic.items():
             PrintUtils.print_delay("{}:".format(tr.tr(categories[tool_type])), 0.005)
-            sortkeys = sorted(tools_list.keys())
-            for tool_id in sortkeys:
+            # 按 install.py 里的书写顺序展示, 方便把推荐项排在前面
+            for tool_id in tools_list.keys():
                 PrintUtils.print_delay(
                     "  [{}]:{}".format(tool_id, tr.tr(tools_list[tool_id]["tip"])),
                     0.005,

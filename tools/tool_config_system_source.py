@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import time
 from .base import BaseTool
 from .base import PrintUtils,CmdTask,FileUtils,AptUtils,ChooseTask
 from .base import osversion
@@ -90,20 +91,54 @@ class Tool(BaseTool):
         tool.add_key()
         tool.add_source()
 
-    def clean_old_source(self):
-        dic = {1:"仅更换系统源",2:"更换系统源并清理第三方源"}
-        code,result = ChooseTask(dic, "请选择换源方式,如果不知道选什么请选2").run()
-        # 删除之前先记下系统是否使用 deb822 格式(24.04+), 否则清理三方源时会连 ubuntu.sources 一起删掉, 就判断不出来了
+    def backup_path(self, path):
+        """把要清理的源文件/目录改名备份, 而不是直接删除, 出问题可以手动恢复"""
+        if not os.path.exists(path):
+            return None
+        backup = '{}.fishros-bak-{}'.format(path, time.strftime('%Y%m%d%H%M%S'))
+        CmdTask('sudo mv {} {}'.format(path, backup)).run()
+        return backup
+
+    def backup_third_party_sources(self):
+        """
+        把 sources.list.d 里的第三方源(除系统自己的 ubuntu.sources 外)挪到备份目录.
+        返回备份目录, 没有第三方源时返回 None
+        """
+        src_dir = '/etc/apt/sources.list.d'
+        if not os.path.isdir(src_dir):
+            return None
+        files = [f for f in os.listdir(src_dir) if f != 'ubuntu.sources']
+        if not files:
+            return None
+        backup = '{}.fishros-bak-{}'.format(src_dir, time.strftime('%Y%m%d%H%M%S'))
+        CmdTask('sudo mkdir -p {}'.format(backup)).run()
+        for f in files:
+            CmdTask('sudo mv {}/{} {}/'.format(src_dir, f, backup)).run()
+        return backup
+
+    def clean_old_source(self, auto=False):
+        if auto:
+            # 全自动模式: 只换系统源, 第三方源先保留, apt update 失败时再挪走(见 change_sys_source)
+            code = 1
+        else:
+            dic = {1:"仅更换系统源",2:"更换系统源并清理第三方源"}
+            code,result = ChooseTask(dic, "请选择换源方式,如果不知道选什么请选2").run()
+        # 清理前先记下系统是否使用 deb822 格式(24.04+), 否则清理三方源时会连 ubuntu.sources 一起挪走, 就判断不出来了
         self.use_deb822 = os.path.exists(ubuntu_deb822_file)
         backup = '/etc/apt/ubuntu.sources.fishros.bak'
         if self.use_deb822 and not os.path.exists(backup):
             CmdTask('sudo cp {} {}'.format(ubuntu_deb822_file, backup)).run()
-        FileUtils.delete('/etc/apt/sources.list')
+        self.backup_path('/etc/apt/sources.list')
         if code==2:
-            print("删除一个资源文件")
-            FileUtils.delete('/etc/apt/sources.list.d')
+            backup_dir = self.backup_third_party_sources()
+            if backup_dir:
+                PrintUtils.print_info('第三方源已备份到 {}, 如需恢复可把里面的文件挪回 /etc/apt/sources.list.d/'.format(backup_dir))
             # fix add source failed before config system source
             CmdTask('sudo mkdir -p /etc/apt/sources.list.d').run()
+
+        if auto:
+            self.source_method_code = 1
+            return
 
         # 添加选择源的方式
         PrintUtils.print_info("源选择方式说明:")
@@ -235,8 +270,8 @@ class Tool(BaseTool):
         return source
 
 
-    def change_sys_source(self):
-        self.clean_old_source()
+    def change_sys_source(self, auto=False):
+        self.clean_old_source(auto=auto)
 
         failed_sources = []
         result = (-1, [], [])
@@ -244,6 +279,12 @@ class Tool(BaseTool):
         if source:
             PrintUtils.print_delay("替换镜像源完成，尝试进行更新....")
             result = CmdTask('sudo apt update',100).run()
+            # 全自动模式下保留了第三方源, 更新失败多半是它们的问题(密钥过期/源失效), 先挪走再试
+            if result[0] != 0 and auto:
+                backup_dir = self.backup_third_party_sources()
+                if backup_dir:
+                    PrintUtils.print_warn('更新失败, 已把可能有问题的第三方源备份到 {} 后重试'.format(backup_dir))
+                    result = CmdTask('sudo apt update',100).run()
             if result[0] != 0:
                 if getattr(self, 'source_method_code', 1) == 2:
                     PrintUtils.print_warn("您选择的源更新失败，请重新选择其他源")

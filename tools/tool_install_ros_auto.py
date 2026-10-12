@@ -1,0 +1,132 @@
+# -*- coding: utf-8 -*-
+import shutil
+from .base import BaseTool
+from .base import PrintUtils, AptUtils, ChooseTask
+from .base import osversion
+from .base import run_tool_file
+from .tool_install_ros import RosVersions
+
+# 每个系统推荐给新手的 ROS 版本(按优先级). 统一推荐该系统对应的 ROS2 长期支持版,
+# 18.04 上的 ROS2 早已停止维护且国内镜像不全, 推荐 ROS1 melodic
+recommend_ros = {
+    "bionic": ["melodic"],
+    "focal": ["foxy", "noetic"],
+    "jammy": ["humble"],
+    "noble": ["jazzy"],
+    "resolute": ["lyrical"],
+}
+# 推荐表里没有的系统(如 Debian), 按这个顺序挑第一个能装的
+fallback_ros = ["lyrical", "jazzy", "humble", "foxy", "kilted", "iron", "galactic", "noetic", "melodic", "rolling"]
+
+# 桌面版装完约占 3~4GB, 剩余空间不足时自动改装基础版
+min_free_gb_for_desktop = 6
+min_free_gb = 2
+
+
+class Tool(BaseTool):
+    def __init__(self):
+        self.name = "全自动安装ROS(新手推荐)"
+        self.type = BaseTool.TYPE_INSTALL
+        self.author = "小鱼"
+
+    @staticmethod
+    def pick_version(codename, available):
+        for name in recommend_ros.get(codename, []) + fallback_ros:
+            if name in available:
+                return name
+        return sorted(available)[0] if available else None
+
+    @staticmethod
+    def free_gb():
+        try:
+            return shutil.disk_usage("/").free / 1024.0 / 1024 / 1024
+        except Exception:
+            return 100
+
+    def show_plan(self, expect_version, desktop):
+        ros_name = "适合本系统的ROS版本(添加软件源后自动确定)"
+        if expect_version:
+            info = RosVersions.get_version_string(expect_version)
+            ros_name = "{} {}".format(info, "桌面版" if desktop else "基础版")
+        PrintUtils.print_success("=" * 60)
+        PrintUtils.print_success(
+            "检测到您的系统: {} {} ({}), 架构 {}".format(
+                osversion.get_name().capitalize(),
+                osversion.get_version(),
+                osversion.get_codename(),
+                AptUtils.getArch(),
+            )
+        )
+        PrintUtils.print_info("全自动模式将依次完成以下步骤, 中途不需要再做选择:")
+        PrintUtils.print_info("  1. 更换系统软件源: 自动测速, 选最快的镜像(原配置会备份)")
+        PrintUtils.print_info("  2. 添加ROS软件源: 自动测速选镜像, 遇到坏掉的镜像自动换下一个")
+        PrintUtils.print_info("  3. 安装 {}".format(ros_name))
+        PrintUtils.print_info("  4. 配置环境变量, 新开终端就能直接使用ROS")
+        if desktop:
+            PrintUtils.print_info("预计下载 0.5~1GB, 占用磁盘 3~4GB, 用时 10~40 分钟(取决于网速)")
+        PrintUtils.print_success("=" * 60)
+
+    def print_next_steps(self, version, desktop):
+        ros1 = RosVersions.get_version(version).version == "ROS1"
+        PrintUtils.print_success("接下来这样验证ROS是否装好(请先新开一个终端):")
+        if ros1:
+            PrintUtils.print_info("  终端1输入: roscore")
+            if desktop:
+                PrintUtils.print_info("  终端2输入: rosrun turtlesim turtlesim_node      (会弹出一只小乌龟)")
+                PrintUtils.print_info("  终端3输入: rosrun turtlesim turtle_teleop_key   (在这个终端按方向键控制小乌龟)")
+        elif desktop:
+            PrintUtils.print_info("  终端1输入: ros2 run turtlesim turtlesim_node      (会弹出一只小乌龟)")
+            PrintUtils.print_info("  终端2输入: ros2 run turtlesim turtle_teleop_key   (在这个终端按方向键控制小乌龟)")
+        else:
+            PrintUtils.print_info("  输入: ros2 topic list   (能列出 /rosout 等话题就说明正常)")
+
+    def run(self):
+        self.ros_tool = run_tool_file("tools.tool_install_ros", authorun=False)
+        if not self.ros_tool.support_install():
+            return False
+
+        free = self.free_gb()
+        if free < min_free_gb:
+            PrintUtils.print_error("磁盘剩余空间只有 {:.1f}GB, 不够安装ROS, 请先清理磁盘或给虚拟机扩容".format(free))
+            return False
+        desktop = free >= min_free_gb_for_desktop
+        if not desktop:
+            PrintUtils.print_warn("磁盘剩余空间 {:.1f}GB, 不够装桌面版, 将改为安装基础版(无图形工具)".format(free))
+
+        codename = osversion.get_codename()
+        expect = recommend_ros.get(codename, [None])[0]
+        self.show_plan(expect, desktop)
+        code, _ = ChooseTask(
+            {1: "开始全自动安装(推荐)", 2: "我要自己选(进入高手自定义模式)"},
+            "请确认:",
+        ).run()
+        if code == 0:
+            return False
+        if code == 2:
+            return self.ros_tool.run()
+
+        source_tool = run_tool_file("tools.tool_config_system_source", authorun=False)
+        source_tool.change_sys_source(auto=True)
+
+        self.ros_tool.add_key()
+        if not self.ros_tool.add_source(auto=True):
+            return False
+
+        dic_base = AptUtils.search_package("ros-base", "ros-[A-Za-z]+-ros-base", "ros-", "-base")
+        if not dic_base:
+            PrintUtils.print_error("软件源里没有找到可安装的ROS, 请携带 /tmp/fishros_install.log 到鱼香社区反馈")
+            return False
+        version = self.pick_version(codename, list(dic_base.keys()))
+        if expect and version != expect:
+            PrintUtils.print_warn("推荐的 {} 当前无法安装, 改为安装 {}".format(expect, version))
+        PrintUtils.print_success(
+            "开始安装 {} {}, 请耐心等待...".format(
+                RosVersions.get_version_string(version), "桌面版" if desktop else "基础版"
+            )
+        )
+
+        self.ros_tool.install_ros_packages(version, 1 if desktop else 2, dic_base)
+        self.ros_tool.config_env_and_tip(version)
+        if self.ros_tool.install_success(version):
+            self.print_next_steps(version, desktop)
+        return True

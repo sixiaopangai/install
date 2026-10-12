@@ -6,7 +6,8 @@
 
 已支持工具列表：
 
-- 一键安装:ROS(支持ROS和ROS2,树莓派Jetson)  [贡献@小鱼](https://github.com/fishros)
+- 一键安装(新手推荐):全自动安装ROS,自动识别系统/换源/选版本,只需确认一次  [贡献@小鱼](https://github.com/fishros)
+- 一键安装(高手自定义):ROS(支持ROS和ROS2,树莓派Jetson,自选镜像源和版本)  [贡献@小鱼](https://github.com/fishros)
 - 一键安装:VsCode(支持amd64和arm64)  [贡献@小鱼](https://github.com/fishros)
 - 一键安装:github桌面版(小鱼常用的github客户端)  [贡献@小鱼](https://github.com/fishros)
 - 一键安装:nodejs开发环境(通过nodejs可以预览小鱼官网噢)  [贡献@小鱼](https://github.com/fishros)
@@ -22,6 +23,22 @@
 ## 使用方法
 ```
 source <(wget -qO- http://fishros.com/install)
+```
+
+第一次装 ROS、不知道怎么选的，在菜单里输入 `21`（全自动安装ROS），确认后脚本会自动识别系统、
+测速换源、挑选可用的镜像和对应的 ROS 版本，中途不用再做选择。想自己指定镜像源和版本的，选 `1`。
+
+### 用自己的服务器测试新版本
+
+把仓库文件放到任意 HTTP 服务器上，把 `install` 第一行改成你的地址，然后在测试机上运行即可，
+后续所有工具脚本都会从这个地址下载：
+
+```
+# 服务器上(仓库目录内)
+sed -i "1s#.*#export FISHROS_URL=http://<服务器IP>:8080/#" install
+python3 -m http.server 8080
+# 测试机上
+wget http://<服务器IP>:8080/install -O fishros && . fishros
 ```
 
 ## 如何自动选择(Dockerfile中使用)

@@ -20,8 +20,15 @@ tools_type_map = {
 
 
 tools = {
+    # 21 放在最前面, 菜单里排在 ROS 相关第一个; ID 1 保持原流程不变, 兼容已有的 fish_install.yaml 自动化配置
+    21: {
+        "tip": "一键安装(新手推荐):全自动安装ROS,自动识别系统/换源/选版本,全程不用选",
+        "type": INSTALL_ROS,
+        "tool": "tools/tool_install_ros_auto.py",
+        "dep": [1, 4, 5],
+    },
     1: {
-        "tip": "一键安装(推荐):ROS(支持ROS/ROS2,树莓派Jetson)",
+        "tip": "一键安装(高手自定义):ROS(支持ROS/ROS2,树莓派Jetson,自选镜像源和版本)",
         "type": INSTALL_ROS,
         "tool": "tools/tool_install_ros.py",
         "dep": [4, 5],
@@ -198,7 +205,8 @@ def main():
     ).run()
 
     PrintUtils.print_success(tr.tr("已为您切换语言至当前所在国家语言:") + tr.lang)
-    if tr.country != "CN":
+    # 只有使用官方镜像站时才切到 GitHub; 自建服务器(FISHROS_URL 指向别处)测试时保持原地址
+    if tr.country != "CN" and "mirror.fishros.com" in url_prefix:
         PrintUtils.print_success(
             tr.tr(
                 "检测到当前不在CN,切换服务地址为:https://raw.githubusercontent.com/fishros/install/master/"

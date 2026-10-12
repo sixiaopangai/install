@@ -620,21 +620,46 @@ class Tool(BaseTool):
                         )
         return stale
 
-    def add_source(self):
+    def auto_mirror_order(self, codename):
+        """
+        全自动模式下的镜像尝试顺序: 国外直接用官方源; 国内按测速结果排列国内镜像, 官方源兜底
+        """
+        names = [
+            name
+            for name in ("ustc", "tsinghua", "huawei", "mirrorz", "aliyun")
+            if name in ros_dist_dic.get(codename, ()) or name in ros2_dist_dic.get(codename, ())
+        ]
+        if not names or (tr is not None and not tr.isCN()):
+            return ["packages.ros"] + names
+        url_to_name = {}
+        for name in names:
+            url = ros_mirror_dic[name].get("ROS2") or ros_mirror_dic[name].get("ROS1")
+            url_to_name[url] = name
+        PrintUtils.print_info("正在为您测速挑选最快的ROS镜像源...")
+        ordered = [url_to_name[url] for url in AptUtils.get_fast_url(list(url_to_name.keys()))]
+        return ordered + ["packages.ros"]
+
+    def add_source(self, auto=False):
         """
         检查并添加ROS系统源
+        auto: 全自动模式, 不询问用户, 按测速顺序自动尝试, 失败自动换下一个
         """
         arch = AptUtils.getArch()
         if arch == None:
             return False
         codename = osversion.get_codename()
 
-        # 让用户选择镜像源
-        selected_mirror = self.select_mirror()
-        PrintUtils.print_info("您选择的镜像源: {}".format(selected_mirror))
+        if auto:
+            candidates = self.auto_mirror_order(codename)
+            selected_mirror = candidates[0]
+            PrintUtils.print_info("自动选择的ROS镜像源: {}".format(selected_mirror))
+        else:
+            # 让用户选择镜像源
+            selected_mirror = self.select_mirror()
+            PrintUtils.print_info("您选择的镜像源: {}".format(selected_mirror))
         excluded = {"ROS1": set(), "ROS2": set()}
 
-        for attempt in range(6):
+        for attempt in range(8):
             mirrors = self.get_mirror_by_code(
                 codename, arch=arch, first_choose=selected_mirror, excluded=excluded
             )
@@ -647,19 +672,29 @@ class Tool(BaseTool):
             if ros_pkg:
                 stale = self.find_stale_mirrors(ros_pkg)
                 if not stale:
-                    PrintUtils.print_success(
-                        "恭喜，成功添加ROS源，接下来可以使用apt安装ROS或者使用[1]一键安装ROS安装！"
-                    )
+                    if auto:
+                        PrintUtils.print_success("ROS软件源添加成功")
+                    else:
+                        PrintUtils.print_success(
+                            "恭喜，成功添加ROS源，接下来可以使用apt安装ROS或者使用[1]一键安装ROS安装！"
+                        )
                     return True
                 for version, name in stale.items():
                     excluded[version].add(name)
                 PrintUtils.print_warn("自动切换到下一个可用的镜像源重试...")
                 continue
 
-            # apt update 失败或搜不到 ROS 包, 让用户换一个镜像源再试
-            PrintUtils.print_warn("换源后更新失败，您可以重新选择镜像源再尝试！")
+            # apt update 失败或搜不到 ROS 包, 换一个镜像源再试
             for version in excluded.keys():
                 excluded[version].add(selected_mirror)
+            if auto:
+                remaining = [m for m in candidates if m not in excluded["ROS2"]]
+                if not remaining:
+                    break
+                selected_mirror = remaining[0]
+                PrintUtils.print_warn("换源后更新失败, 自动换用镜像源: {}".format(selected_mirror))
+                continue
+            PrintUtils.print_warn("换源后更新失败，您可以重新选择镜像源再尝试！")
             selected_mirror = self.select_mirror()
             PrintUtils.print_info("您重新选择的镜像源: {}".format(selected_mirror))
             for version in excluded.keys():
@@ -828,12 +863,17 @@ class Tool(BaseTool):
             PrintUtils.print_error("你选择退出。。。。")
             return False
 
+        return self.install_ros_packages(ros_name[rosname], code, dic_base)
+
+    def install_ros_packages(self, install_version, code, dic_base):
+        """
+        安装指定版本的ROS, 自定义模式和全自动模式共用
+        install_version: 版本名, 如 humble; code: 1 桌面版, 2 基础版; dic_base: 版本名 -> ros-base 包名
+        """
         install_tool = "aptitude"
         install_tool_apt = "apt"
         if osversion.get_version() == "16.04":
             install_tool = "apt"
-
-        install_version = ros_name[rosname]
 
         if install_tool == "aptitude":
             AptUtils.install_pkg("aptitude")

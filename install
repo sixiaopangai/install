@@ -15,7 +15,8 @@ source /etc/profile
 
 if [ -s /tmp/fishinstall/install.py ]; then
     $SUDO apt install python3-distro python3-yaml -y
-    $SUDO python3 /tmp/fishinstall/install.py
+    # sudo 默认会清掉环境变量, 显式把 FISHROS_URL 传进去, 否则后续工具一律从默认地址下载(自建服务器测试时会拿到旧版)
+    $SUDO env FISHROS_URL="$FISHROS_URL" python3 /tmp/fishinstall/install.py
 else
     echo "下载一键安装脚本失败: ${FISHROS_URL}install.py"
     echo "请检查网络后重试(能否打开 ${FISHROS_URL}install.py)"
