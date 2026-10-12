@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import re
 from .base import BaseTool
 from .base import PrintUtils, CmdTask, FileUtils, AptUtils, ChooseTask
@@ -723,30 +724,61 @@ class Tool(BaseTool):
         )
         return False
 
+    @staticmethod
+    def key_sources():
+        """
+        公钥下载地址, 按可靠程度排序. 第一个是随一键安装一起发布的公钥(tools/keys/ros.asc):
+        用户既然能下载到一键安装, 就一定能从同一台服务器下载到它
+        """
+        prefix = os.environ.get("FISHROS_URL", "http://mirror.fishros.com/install/")
+        return [os.path.join(prefix, "tools/keys/ros.asc")] + key_urls
+
+    @staticmethod
+    def gpg_cmd(*commands):
+        """
+        拼出一段 shell: 依次执行若干条 gpg 命令, 都用同一个临时目录当 GNUPGHOME, 结束后删掉.
+        全新系统里 root 从没用过 gpg, /root/.gnupg 不存在, gpg 连密钥服务器时起不来 dirmngr
+        ("缺少 dirmngr"), 导入/校验也会因为建不了锁文件失败
+        """
+        gpg = 'sudo env GNUPGHOME="$d" gpg --batch '
+        body = " && ".join(gpg + c for c in commands)
+        return "sh -c 'd=$(mktemp -d) && {}; r=$?; rm -rf \"$d\"; exit $r'".format(body)
+
+    def key_fingerprint_ok(self, key_file):
+        """校验公钥是不是 ROS 官方那把; 没有 gpg 时只能跳过"""
+        if not self.has_command("gpg"):
+            return True
+        result = CmdTask(
+            self.gpg_cmd("--with-colons --import-options show-only --import {}".format(key_file)), 20
+        ).run()
+        return ros_key_fingerprint in " ".join(result[1])
+
     def download_ros_key(self):
         """
-        依次尝试各个公钥地址, 下载并校验通过后返回本地文件路径.
-        gitee raw 现在会 302 跳到 raw.giteeusercontent.com, curl 必须带 -L, 否则拿到的是一段 HTML
+        依次尝试各个公钥地址, 每个地址最多试 3 次(网络抖动时 TLS 连接会被重置, curl 的 --retry 不重试这种错误),
+        内容是 PGP 公钥且指纹正确才采用, 返回本地文件路径
         """
         key_file = "/tmp/fishros_ros.asc"
-        # wget 一定有(用户就是用它下载的一键安装), curl 不一定
+        # wget 一定有(用户就是用它下载的一键安装), curl 不一定; gitee 会 302 跳转, curl 必须带 -L
         if self.has_command("curl"):
-            download = "curl -fsSL --retry 2 --max-time 30 {url} -o {out}"
+            download = "curl -fsSL --max-time 30 {url} -o {out}"
         else:
-            download = "wget -q --tries=2 --timeout=30 -O {out} {url}"
-        PrintUtils.print_success(tr.tr("正在挑选最快的密钥服务:{}").format(key_urls))
-        for key_url in AptUtils.get_fast_url(key_urls):
-            CmdTask("rm -f {}".format(key_file), 3).run()
-            result = CmdTask(download.format(url=key_url, out=key_file), 40).run()
-            if result[0] != 0:
-                continue
-            check = CmdTask(
-                "grep -q 'BEGIN PGP PUBLIC KEY BLOCK' {}".format(key_file), 3
-            ).run()
-            if check[0] == 0:
-                PrintUtils.print_success(tr.tr("已自动选择最快密钥服务:{}").format(key_url))
+            download = "wget -q --timeout=30 -O {out} {url}"
+        sources = self.key_sources()
+        PrintUtils.print_success(tr.tr("正在获取ROS公钥:{}").format(sources))
+        for key_url in sources:
+            for attempt in range(3):
+                CmdTask("rm -f {}".format(key_file), 3).run()
+                if CmdTask(download.format(url=key_url, out=key_file), 40).run()[0] != 0:
+                    continue
+                if CmdTask("grep -q 'BEGIN PGP PUBLIC KEY BLOCK' {}".format(key_file), 3).run()[0] != 0:
+                    PrintUtils.print_warn("{} 返回的不是公钥, 尝试下一个地址".format(key_url))
+                    break
+                if not self.key_fingerprint_ok(key_file):
+                    PrintUtils.print_warn("{} 的公钥指纹不对, 不予采用".format(key_url))
+                    break
+                PrintUtils.print_success(tr.tr("已获取ROS公钥:{}").format(key_url))
                 return key_file
-            PrintUtils.print_warn("{} 返回的不是有效公钥, 尝试下一个地址".format(key_url))
         return None
 
     def add_key(self):
@@ -764,12 +796,13 @@ class Tool(BaseTool):
         key_file = self.download_ros_key()
         if key_file:
             # 统一导入 trusted.gpg.d, 新旧系统都认, 不依赖已弃用的 apt-key
-            cmd_result = CmdTask(
-                "sudo gpg --batch --yes --dearmor -o {0} {1} && sudo chmod 644 {0}".format(
-                    ros_keyring, key_file
-                ),
-                20,
-            ).run()
+            if self.has_command("gpg"):
+                cmd_result = CmdTask(
+                    "{} && sudo chmod 644 {}".format(
+                        self.gpg_cmd("--yes --dearmor -o {} {}".format(ros_keyring, key_file)), ros_keyring
+                    ),
+                    20,
+                ).run()
             if cmd_result[0] != 0:
                 # 没有 gpg(精简系统/容器, 或系统源坏了装不上 gnupg)时直接放 .asc 公钥
                 PrintUtils.print_info("gpg 不可用, 改为直接导入 ASCII 格式公钥")
@@ -782,20 +815,27 @@ class Tool(BaseTool):
             if cmd_result[0] != 0 and self.has_command("apt-key"):
                 cmd_result = CmdTask("sudo apt-key add {}".format(key_file), 20).run()
 
-        if cmd_result[0] != 0:
+        if cmd_result[0] != 0 and self.has_command("gpg"):
             PrintUtils.print_info(tr.tr("导入密钥失败，开始更换导入方式并二次尝试..."))
-            # 11371 端口经常不通, 走 80 端口; 用完整指纹
-            tmp_keyring = "/tmp/fishros_ros_keyring.gpg"
-            cmd_result = CmdTask(
-                "sudo rm -f {1} && "
-                "sudo gpg --batch --no-default-keyring --keyring {1} "
-                "--keyserver hkp://keyserver.ubuntu.com:80 --recv-keys {0} && "
-                "sudo gpg --batch --no-default-keyring --keyring {1} --export {0} "
-                "| sudo tee {2} > /dev/null && sudo chmod 644 {2}".format(
-                    ros_key_fingerprint, tmp_keyring, ros_keyring
-                ),
-                60,
-            ).run()
+            # 从密钥服务器取, 用完整指纹; 有的网络 80 端口不通、有的 11371 端口不通, 两个都试
+            for keyserver in ("hkp://keyserver.ubuntu.com:80", "hkp://keyserver.ubuntu.com"):
+                cmd_result = CmdTask(
+                    "{} | sudo tee {} > /dev/null && sudo chmod 644 {}".format(
+                        self.gpg_cmd(
+                            "--keyserver {} --recv-keys {} >&2".format(keyserver, ros_key_fingerprint),
+                            "--export {}".format(ros_key_fingerprint),
+                        ),
+                        ros_keyring,
+                        ros_keyring,
+                    ),
+                    60,
+                ).run()
+                if cmd_result[0] == 0 and CmdTask("test -s {}".format(ros_keyring), 3).run()[0] == 0:
+                    break
+                cmd_result = (1, [], [])
+            if cmd_result[0] != 0:
+                # 取不到时 tee 会留下空文件, apt 会对它报警告, 删掉
+                CmdTask("[ -s {0} ] || sudo rm -f {0}".format(ros_keyring), 3).run()
 
         if cmd_result[0] != 0:
             PrintUtils.print_error(
