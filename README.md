@@ -4,19 +4,38 @@
 
 ## 工具列表
 
-已支持工具列表：
+已支持工具列表（方括号里是菜单编号）：
 
-- 一键安装(新手推荐):全自动安装ROS,自动识别系统/换源/选版本,只需确认一次  [贡献@小鱼](https://github.com/fishros)
-- 一键安装(高手自定义):ROS(支持ROS和ROS2,树莓派Jetson,自选镜像源和版本)  [贡献@小鱼](https://github.com/fishros)
-- 一键安装:VsCode(支持amd64和arm64)  [贡献@小鱼](https://github.com/fishros)
-- 一键安装:github桌面版(小鱼常用的github客户端)  [贡献@小鱼](https://github.com/fishros)
-- 一键安装:nodejs开发环境(通过nodejs可以预览小鱼官网噢)  [贡献@小鱼](https://github.com/fishros)
-- 一键配置:rosdep(小鱼的rosdepc,又快又好用)  [贡献@小鱼](https://github.com/fishros)
-- 一键配置:ROS环境(快速更新ROS环境设置,自动生成环境选择)  [贡献@小鱼](https://github.com/fishros)
-- 一键配置:系统源(更换系统源,支持全版本Ubuntu系统)  [贡献@小鱼](https://github.com/fishros)
-- 一键安装:Docker(支持amd64和arm64)  [贡献@alyssa](https://github.com/alyssa1024)
-- 一键安装:cartographer 贡献 [@小鱼](https://github.com/fishros) & [@Catalpa](https://github.com/Y-zi)
-- 一键安装:微信客户端  [贡献@小鱼](https://github.com/fishros)
+**ROS安装**
+- [21] 一键安装:ROS全自动版(新手推荐,自动识别系统/换源/选版本,只需确认一次)  [贡献@小鱼](https://github.com/fishros)
+- [1] 一键安装:ROS自定义版(高手适用,自选镜像源和版本,支持ROS1/ROS2/树莓派/Jetson)  [贡献@小鱼](https://github.com/fishros)
+- [11] 一键安装:ROS Docker版(支持所有版本ROS/ROS2,系统版本不匹配时使用)
+- [16] 一键安装:系统自带ROS(仅供特殊情况下使用)
+
+**ROS开发工具**
+- [4] 一键配置:ROS环境(快速更新ROS环境设置,自动生成环境选择)  [贡献@小鱼](https://github.com/fishros)
+- [3] 一键安装:rosdepc(小鱼的国内版rosdep,又快又好用)  [贡献@小鱼](https://github.com/fishros)
+- [9] 一键安装:Cartographer(仅支持ROS1:Ubuntu16/18/20)  贡献 [@小鱼](https://github.com/fishros) & [@Catalpa](https://github.com/Y-zi)
+- [12] 一键安装:MicroROS开发环境(PlatformIO,支持FishBot)
+
+**换源与网络**
+- [5] 一键配置:系统源(更换国内源,支持Ubuntu/Debian全版本)  [贡献@小鱼](https://github.com/fishros)
+- [13] 一键配置:Python国内源
+- [17] 一键配置:Docker代理(支持VPN+代理服务两种模式)
+- [14] 一键安装:科学上网代理工具
+
+**开发工具**
+- [7] 一键安装:VSCode(支持amd64和arm64)  [贡献@小鱼](https://github.com/fishros)
+- [8] 一键安装:Docker(支持amd64和arm64)  [贡献@alyssa](https://github.com/alyssa1024)
+- [6] 一键安装:Node.js开发环境  [贡献@小鱼](https://github.com/fishros)
+- [2] 一键安装:GitHub桌面版(小鱼常用的GitHub客户端)  [贡献@小鱼](https://github.com/fishros)
+- [18] 一键安装/卸载:OpenCode(AI编程助手)
+
+**日常软件**
+- [10] 一键安装:微信客户端  [贡献@小鱼](https://github.com/fishros)
+- [15] 一键安装:QQ for Linux
+
+> 菜单编号固定不变（自动化配置按编号选择），新增工具只会用新编号。
 
 
 

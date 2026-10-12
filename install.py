@@ -6,149 +6,156 @@ url_prefix = os.environ.get("FISHROS_URL", "http://mirror.fishros.com/install/")
 base_url = os.path.join(url_prefix, "tools/base.py")
 translator_url = os.path.join(url_prefix, "tools/translation/translator.py")
 
-INSTALL_ROS = 0  # 安装ROS相关
-INSTALL_SOFTWARE = 1  # 安装软件
-CONFIG_TOOL = 2  # 配置相关
-INSTALL_AI = 3  # AI相关
+# 菜单分组, 显示顺序与下面 tools_type_map 的书写顺序一致
+CAT_ROS_INSTALL = 0
+CAT_ROS_TOOLS = 1
+CAT_SOURCE_NETWORK = 2
+CAT_DEV_TOOLS = 3
+CAT_DAILY = 4
 
 tools_type_map = {
-    INSTALL_ROS: "ROS相关",
-    INSTALL_AI: "AI板块",
-    INSTALL_SOFTWARE: "常用软件",
-    CONFIG_TOOL: "配置工具",
+    CAT_ROS_INSTALL: "ROS安装",
+    CAT_ROS_TOOLS: "ROS开发工具",
+    CAT_SOURCE_NETWORK: "换源与网络",
+    CAT_DEV_TOOLS: "开发工具",
+    CAT_DAILY: "日常软件",
 }
 
-
+# 菜单编号是对外接口(fish_install.yaml / Dockerfile 里按编号自动选择), 只能新增不能改号;
+# 菜单里按本字典的书写顺序展示, 所以调整顺序只需要挪位置, 不要改编号
 tools = {
-    # 21 放在最前面, 菜单里排在 ROS 相关第一个; ID 1 保持原流程不变, 兼容已有的 fish_install.yaml 自动化配置
+    # ---------------- ROS安装 ----------------
     21: {
-        "tip": "一键安装(新手推荐):全自动安装ROS,自动识别系统/换源/选版本,全程不用选",
-        "type": INSTALL_ROS,
+        "tip": "一键安装:ROS全自动版(新手推荐,自动识别系统/换源/选版本,只需确认一次)",
+        "type": CAT_ROS_INSTALL,
         "tool": "tools/tool_install_ros_auto.py",
         "dep": [1, 4, 5],
     },
     1: {
-        "tip": "一键安装(高手自定义):ROS(支持ROS/ROS2,树莓派Jetson,自选镜像源和版本)",
-        "type": INSTALL_ROS,
+        "tip": "一键安装:ROS自定义版(高手适用,自选镜像源和版本,支持ROS1/ROS2/树莓派/Jetson)",
+        "type": CAT_ROS_INSTALL,
         "tool": "tools/tool_install_ros.py",
         "dep": [4, 5],
     },
-    2: {
-        "tip": "一键安装:github桌面版(小鱼常用的github客户端)",
-        "type": INSTALL_SOFTWARE,
-        "tool": "tools/tool_install_github_desktop.py",
-        "dep": [],
+    11: {
+        "tip": "一键安装:ROS Docker版(支持所有版本ROS/ROS2,系统版本不匹配时使用)",
+        "type": CAT_ROS_INSTALL,
+        "tool": "tools/tool_install_ros_with_docker.py",
+        "dep": [7, 8],
     },
-    3: {
-        "tip": "一键安装:rosdep(小鱼的rosdepc,又快又好用)",
-        "type": INSTALL_ROS,
-        "tool": "tools/tool_config_rosdep.py",
-        "dep": [],
+    16: {
+        "tip": "一键安装:系统自带ROS(！！警告！！仅供特殊情况下使用)",
+        "type": CAT_ROS_INSTALL,
+        "tool": "tools/tool_install_ros1_systemdefault.py",
+        "dep": [5],
     },
+    # ---------------- ROS开发工具 ----------------
     4: {
         "tip": "一键配置:ROS环境(快速更新ROS环境设置,自动生成环境选择)",
-        "type": INSTALL_ROS,
+        "type": CAT_ROS_TOOLS,
         "tool": "tools/tool_config_rosenv.py",
         "dep": [],
     },
+    3: {
+        "tip": "一键安装:rosdepc(小鱼的国内版rosdep,又快又好用)",
+        "type": CAT_ROS_TOOLS,
+        "tool": "tools/tool_config_rosdep.py",
+        "dep": [],
+    },
+    9: {
+        "tip": "一键安装:Cartographer(谷歌建图算法,仅支持ROS1:Ubuntu16/18/20)",
+        "type": CAT_ROS_TOOLS,
+        "tool": "tools/tool_install_cartographer.py",
+        "dep": [3],
+    },
+    12: {
+        "tip": "一键安装:MicroROS开发环境(PlatformIO,支持FishBot)",
+        "type": CAT_ROS_TOOLS,
+        "tool": "tools/tool_install_micros_fishbot_env.py",
+        "dep": [],
+    },
+    # ---------------- 换源与网络 ----------------
     5: {
-        "tip": "一键配置:系统源(更换系统源,支持全版本Ubuntu系统)",
-        "type": CONFIG_TOOL,
+        "tip": "一键配置:系统源(更换国内源,支持Ubuntu/Debian全版本)",
+        "type": CAT_SOURCE_NETWORK,
         "tool": "tools/tool_config_system_source.py",
         "dep": [1],
     },
-    6: {
-        "tip": "一键安装:NodeJs环境",
-        "type": INSTALL_AI,
-        "tool": "tools/tool_install_nodejs.py",
+    13: {
+        "tip": "一键配置:Python国内源(加速pip安装)",
+        "type": CAT_SOURCE_NETWORK,
+        "tool": "tools/tool_config_python_source.py",
         "dep": [],
     },
+    17: {
+        "tip": "一键配置:Docker代理(支持VPN+代理服务两种模式)",
+        "type": CAT_SOURCE_NETWORK,
+        "tool": "tools/tool_config_docker_proxy.py",
+        "dep": [],
+    },
+    14: {
+        "tip": "一键安装:科学上网代理工具",
+        "type": CAT_SOURCE_NETWORK,
+        "tool": "tools/tool_install_proxy_tool.py",
+        "dep": [8],
+    },
+    # ---------------- 开发工具 ----------------
     7: {
-        "tip": "一键安装:VsCode开发工具",
-        "type": INSTALL_SOFTWARE,
+        "tip": "一键安装:VSCode(代码编辑器)",
+        "type": CAT_DEV_TOOLS,
         "tool": "tools/tool_install_vscode.py",
         "dep": [],
     },
     8: {
         "tip": "一键安装:Docker",
-        "type": INSTALL_SOFTWARE,
+        "type": CAT_DEV_TOOLS,
         "tool": "tools/tool_install_docker.py",
         "dep": [],
     },
-    9: {
-        "tip": "一键安装:Cartographer(18 20测试通过,16未测. updateTime 20240125)",
-        "type": INSTALL_ROS,
-        "tool": "tools/tool_install_cartographer.py",
-        "dep": [3],
-    },
-    10: {
-        "tip": "一键安装:微信(可以在Linux上使用的微信)",
-        "type": INSTALL_SOFTWARE,
-        "tool": "tools/tool_install_wechat.py",
-        "dep": [8],
-    },
-    11: {
-        "tip": "一键安装:ROS Docker版(支持所有版本ROS/ROS2)",
-        "type": INSTALL_ROS,
-        "tool": "tools/tool_install_ros_with_docker.py",
-        "dep": [7, 8],
-    },
-    12: {
-        "tip": "一键安装:PlateformIO MicroROS开发环境(支持Fishbot)",
-        "type": INSTALL_SOFTWARE,
-        "tool": "tools/tool_install_micros_fishbot_env.py",
+    6: {
+        "tip": "一键安装:Node.js环境",
+        "type": CAT_DEV_TOOLS,
+        "tool": "tools/tool_install_nodejs.py",
         "dep": [],
     },
-    13: {
-        "tip": "一键配置:python国内源",
-        "type": CONFIG_TOOL,
-        "tool": "tools/tool_config_python_source.py",
-        "dep": [],
-    },
-    14: {
-        "tip": "一键安装:科学上网代理工具",
-        "type": INSTALL_AI,
-        "tool": "tools/tool_install_proxy_tool.py",
-        "dep": [8],
-    },
-    15: {
-        "tip": "一键安装：QQ for Linux",
-        "type": INSTALL_SOFTWARE,
-        "tool": "tools/tool_install_qq.py",
-        "dep": [],
-    },
-    16: {
-        "tip": "一键安装：系统自带ROS (！！警告！！仅供特殊情况下使用)",
-        "type": INSTALL_ROS,
-        "tool": "tools/tool_install_ros1_systemdefault.py",
-        "dep": [5],
-    },
-    17: {
-        "tip": "一键配置: Docker代理(支持VPN+代理服务两种模式)",
-        "type": CONFIG_TOOL,
-        "tool": "tools/tool_config_docker_proxy.py",
+    2: {
+        "tip": "一键安装:GitHub桌面版(小鱼常用的GitHub客户端)",
+        "type": CAT_DEV_TOOLS,
+        "tool": "tools/tool_install_github_desktop.py",
         "dep": [],
     },
     18: {
         "tip": "一键安装/卸载:OpenCode(AI编程助手)",
-        "type": INSTALL_AI,
+        "type": CAT_DEV_TOOLS,
         "tool": "tools/tool_install_opencode.py",
         "dep": [6],
     },
     # 19: {
     #     "tip": "一键清理:OpenClaw(可选保留配置)",
-    #     "type": INSTALL_AI,
+    #     "type": CAT_DEV_TOOLS,
     #     "tool": "tools/tool_config_openclaw_cleanup.py",
     #     "dep": [],
     # },
     # 20: {
     #     "tip": "一键安装:OpenClaw(智能AI助手)",
-    #     "type": INSTALL_AI,
+    #     "type": CAT_DEV_TOOLS,
     #     "tool": "tools/tool_install_openclaw.py",
     #     "dep": [6],
     # },
+    # ---------------- 日常软件 ----------------
+    10: {
+        "tip": "一键安装:微信(可以在Linux上使用的微信)",
+        "type": CAT_DAILY,
+        "tool": "tools/tool_install_wechat.py",
+        "dep": [8],
+    },
+    15: {
+        "tip": "一键安装:QQ for Linux",
+        "type": CAT_DAILY,
+        "tool": "tools/tool_install_qq.py",
+        "dep": [],
+    },
 }
-#
 
 
 # 创建用于存储不同类型工具的字典，按目录顺序展示

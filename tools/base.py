@@ -1231,7 +1231,7 @@ class ChooseWithCategoriesTask(Task):
             # 按 install.py 里的书写顺序展示, 方便把推荐项排在前面
             for tool_id in tools_list.keys():
                 PrintUtils.print_delay(
-                    "  [{}]:{}".format(tool_id, tr.tr(tools_list[tool_id]["tip"])),
+                    "  [{:>2}]:{}".format(tool_id, tr.tr(tools_list[tool_id]["tip"])),
                     0.005,
                 )
                 tool_ids.append(tool_id)
