@@ -63,7 +63,7 @@ tools = {
         "dep": [],
     },
     22: {
-        "tip": "一键安装:ROS常用功能包(导航Nav2/建图slam_toolbox、Cartographer/键盘遥控等)",
+        "tip": "一键安装:ROS常用功能包(导航Nav2/建图slam_toolbox、Cartographer/键盘、手柄遥控等)",
         "type": CAT_ROS_TOOLS,
         "tool": "tools/tool_install_ros_pkgs.py",
         "dep": [1],

@@ -31,7 +31,7 @@ For more tool tutorials, please visit Yuxiang ROS official website :http://fishr
     "一键安装:ROS Docker版(支持所有版本ROS/ROS2,系统版本不匹配时使用)": "Install ROS in Docker (any ROS/ROS2 version, when your OS doesn't match)",
     "一键安装:系统自带ROS(！！警告！！仅供特殊情况下使用)": "Install: System shipped ROS (!!Warning!! Only for special cases)",
     "一键配置:ROS环境(快速更新ROS环境设置,自动生成环境选择,修复中文路径编译报错)": "Configure ROS environment (update shell setup, version switch, fix builds under non-ASCII paths)",
-    "一键安装:ROS常用功能包(导航Nav2/建图slam_toolbox、Cartographer/键盘遥控等)": "Install common ROS packages (Nav2, slam_toolbox, Cartographer, teleop, ...)",
+    "一键安装:ROS常用功能包(导航Nav2/建图slam_toolbox、Cartographer/键盘、手柄遥控等)": "Install common ROS packages (Nav2, slam_toolbox, Cartographer, keyboard/joystick teleop, ...)",
     "一键安装:rosdepc(小鱼的国内版rosdep,又快又好用)": "Install rosdepc (rosdep with China mirrors)",
     "一键安装:Cartographer(谷歌建图算法,仅支持ROS1:Ubuntu16/18/20)": "Install Cartographer (Google SLAM, ROS1 only: Ubuntu 16/18/20)",
     "一键安装:MicroROS开发环境(PlatformIO,支持FishBot)": "Install micro-ROS dev environment (PlatformIO, supports FishBot)",

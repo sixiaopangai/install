@@ -15,7 +15,7 @@
 **ROS开发工具**
 - [4] 一键配置:ROS环境(快速更新ROS环境设置,自动生成环境选择,修复中文路径编译报错)  [贡献@小鱼](https://github.com/fishros)
 - [3] 一键安装:rosdepc(小鱼的国内版rosdep,又快又好用)  [贡献@小鱼](https://github.com/fishros)
-- [22] 一键安装:ROS常用功能包(导航Nav2/建图slam_toolbox、Cartographer/键盘遥控等)
+- [22] 一键安装:ROS常用功能包(导航Nav2/建图slam_toolbox、Cartographer/键盘、手柄遥控等)
 - [9] 一键安装:Cartographer(仅支持ROS1:Ubuntu16/18/20)  贡献 [@小鱼](https://github.com/fishros) & [@Catalpa](https://github.com/Y-zi)
 - [12] 一键安装:MicroROS开发环境(PlatformIO,支持FishBot)
 
