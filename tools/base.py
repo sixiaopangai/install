@@ -25,7 +25,9 @@ except:
     print("WARN:No Yaml Module!")
 
 encoding = locale.getpreferredencoding()
-encoding_utf8 = encoding.find("UTF") > -1
+# Python 3.11+ 在 C/POSIX 区域设置下自动切到 UTF-8 时返回的是小写 "utf-8", 要忽略大小写判断,
+# 否则会误判为不支持 UTF-8, 一直提示 Finish! Please Try Again!
+encoding_utf8 = "UTF" in encoding.upper()
 
 
 tr = None

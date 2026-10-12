@@ -299,7 +299,26 @@ def main():
         )
 
 
+def ensure_utf8():
+    """
+    终端编码不是 UTF-8(LANG 没设置、GBK 等)时, 打印中文会出错. 原来的做法是装中文语言包后让用户重跑,
+    但语言包没生效时就会一直提示 Finish! Please Try Again!(社区帖 24).
+    改为直接用系统自带的 C.UTF-8 重新启动自己; 重启后仍不是 UTF-8 才走原来的语言包流程
+    """
+    import locale
+    import sys
+
+    if "UTF" in locale.getpreferredencoding().upper() or os.environ.get("FISHROS_UTF8_RESTARTED"):
+        return
+    print("Terminal encoding is not UTF-8, restarting with C.UTF-8 ...")
+    sys.stdout.flush()
+    env = dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8", PYTHONIOENCODING="utf-8")
+    env.update(PYTHONUTF8="1", FISHROS_UTF8_RESTARTED="1")
+    os.execve(sys.executable, [sys.executable] + sys.argv, env)
+
+
 if __name__ == "__main__":
+    ensure_utf8()
     run_exc = []
 
     try:
