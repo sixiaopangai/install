@@ -1074,6 +1074,7 @@ class Tool(BaseTool):
         if not self.support_install():
             return False
 
+        AptUtils.wait_and_repair()
         self.check_sys_source()
         self.add_key()
         self.add_source()

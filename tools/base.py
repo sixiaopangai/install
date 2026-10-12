@@ -1496,6 +1496,24 @@ class AptUtils:
         return True
 
     @staticmethod
+    def wait_and_repair():
+        """
+        安装前的准备, 处理两种新手最常见的 apt 报错:
+        1. 刚开机时系统自动更新占着 apt 锁: Could not get lock /var/lib/dpkg/lock-frontend
+        2. 上次安装中途 Ctrl+C 留下没配置完的包: dpkg was interrupted, you must manually run 'dpkg --configure -a'
+        """
+        locks = "/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock"
+        for i in range(60):
+            if CmdTask("fuser {} > /dev/null 2>&1".format(locks), 5).run()[0] != 0:
+                break
+            if i == 0:
+                PrintUtils.print_warn(
+                    tr.tr("检测到其他程序(通常是系统自动更新)正在使用软件包管理器, 等待它结束(最多5分钟)...")
+                )
+            time.sleep(5)
+        CmdTask("sudo dpkg --configure -a", 0).run()
+
+    @staticmethod
     def getArch():
         result = CmdTask("dpkg --print-architecture", 2).run()
         arc = result[1][0].strip("\n")

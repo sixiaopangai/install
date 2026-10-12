@@ -122,6 +122,8 @@ class Tool(BaseTool):
             return self.ros_tool.run()
         with_pkgs = code == 2
 
+        # 之前跑过一半(自定义模式选到一半退出、Ctrl+C 打断)留下的 apt 锁/未配置完的包先处理掉
+        AptUtils.wait_and_repair()
         source_tool = run_tool_file("tools.tool_config_system_source", authorun=False)
         source_tool.change_sys_source(auto=True)
 
