@@ -72,7 +72,8 @@ class Tool(BaseTool):
         PrintUtils.print_info("  1. 更换系统软件源: 自动测速, 选最快的镜像(原配置会备份)")
         PrintUtils.print_info("  2. 添加ROS软件源: 自动测速选镜像, 遇到坏掉的镜像自动换下一个")
         PrintUtils.print_info("  3. 安装 {}".format(ros_name))
-        PrintUtils.print_info("  4. 配置环境变量, 新开终端就能直接使用ROS")
+        PrintUtils.print_info("  4. 配置环境变量, 新开终端就能直接使用ROS; 工作空间放在中文路径(如 ~/桌面)下也能编译")
+        PrintUtils.print_info("  (选 2 会再装上导航、建图等常用功能包, 也可以以后在菜单 [22] 单独装)")
         if desktop:
             PrintUtils.print_info("预计下载 0.5~1GB, 占用磁盘 3~4GB, 用时 10~40 分钟(取决于网速)")
         PrintUtils.print_success("=" * 60)
@@ -108,13 +109,18 @@ class Tool(BaseTool):
         expect = recommend_ros.get(codename, [None])[0]
         self.show_plan(expect, desktop)
         code, _ = ChooseTask(
-            {1: "开始全自动安装(推荐)", 2: "我要自己选(进入高手自定义模式)"},
+            {
+                1: "开始全自动安装(推荐)",
+                2: "全自动安装 + 常用功能包(导航/建图等, 做FishBot等机器人项目选这个, 多下载几百MB)",
+                3: "我要自己选(进入高手自定义模式)",
+            },
             "请确认:",
         ).run()
         if code == 0:
             return False
-        if code == 2:
+        if code == 3:
             return self.ros_tool.run()
+        with_pkgs = code == 2
 
         source_tool = run_tool_file("tools.tool_config_system_source", authorun=False)
         source_tool.change_sys_source(auto=True)
@@ -146,6 +152,8 @@ class Tool(BaseTool):
                 break
             PrintUtils.print_warn("系统镜像下载中途失败, 已自动换用 {} 继续安装(已下载的包不会重复下载)".format(new_source))
             self.ros_tool.install_ros_packages(version, install_code, dic_base)
+        if with_pkgs and self.ros_tool.install_success(version):
+            run_tool_file("tools.tool_install_ros_pkgs", authorun=False).install_common(version, auto=True)
         self.ros_tool.config_env_and_tip(version)
         if self.ros_tool.install_success(version):
             self.print_next_steps(version, desktop)

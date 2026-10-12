@@ -119,11 +119,11 @@
 - name: "Install_ROS_focal_auto"
   target_os_version: "focal"
   chooses:
-    - { choose: 21, desc: "一键安装(新手推荐):全自动安装ROS" }
+    - { choose: 21, desc: "一键安装:ROS全自动版(新手推荐)" }
     - { choose: 1, desc: "开始全自动安装" }
 
-- name: "Install_ROS_jammy_auto"
+- name: "Install_ROS_jammy_auto_with_pkgs"
   target_os_version: "jammy"
   chooses:
-    - { choose: 21, desc: "一键安装(新手推荐):全自动安装ROS" }
-    - { choose: 1, desc: "开始全自动安装" }
+    - { choose: 21, desc: "一键安装:ROS全自动版(新手推荐)" }
+    - { choose: 2, desc: "全自动安装 + 常用功能包(导航/建图)" }

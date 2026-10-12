@@ -29,7 +29,7 @@ tools = {
         "tip": "一键安装:ROS全自动版(新手推荐,自动识别系统/换源/选版本,只需确认一次)",
         "type": CAT_ROS_INSTALL,
         "tool": "tools/tool_install_ros_auto.py",
-        "dep": [1, 4, 5],
+        "dep": [1, 4, 5, 22],
     },
     1: {
         "tip": "一键安装:ROS自定义版(高手适用,自选镜像源和版本,支持ROS1/ROS2/树莓派/Jetson)",
@@ -51,7 +51,7 @@ tools = {
     },
     # ---------------- ROS开发工具 ----------------
     4: {
-        "tip": "一键配置:ROS环境(快速更新ROS环境设置,自动生成环境选择)",
+        "tip": "一键配置:ROS环境(快速更新ROS环境设置,自动生成环境选择,修复中文路径编译报错)",
         "type": CAT_ROS_TOOLS,
         "tool": "tools/tool_config_rosenv.py",
         "dep": [],
@@ -61,6 +61,12 @@ tools = {
         "type": CAT_ROS_TOOLS,
         "tool": "tools/tool_config_rosdep.py",
         "dep": [],
+    },
+    22: {
+        "tip": "一键安装:ROS常用功能包(导航Nav2/建图slam_toolbox、Cartographer/键盘遥控等)",
+        "type": CAT_ROS_TOOLS,
+        "tool": "tools/tool_install_ros_pkgs.py",
+        "dep": [1],
     },
     9: {
         "tip": "一键安装:Cartographer(谷歌建图算法,仅支持ROS1:Ubuntu16/18/20)",
