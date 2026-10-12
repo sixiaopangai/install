@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import shutil
+from urllib.parse import urlparse
 from .base import BaseTool
 from .base import PrintUtils, AptUtils, ChooseTask
 from .base import osversion
@@ -42,6 +43,16 @@ class Tool(BaseTool):
             return shutil.disk_usage("/").free / 1024.0 / 1024 / 1024
         except Exception:
             return 100
+
+    def system_mirror_failed(self, source_tool):
+        """最后一次安装的报错里是否有当前系统镜像的下载失败"""
+        source = getattr(source_tool, "current_source", None)
+        result = getattr(self.ros_tool, "last_install_result", None)
+        if not source or not result or len(result) < 3:
+            return False
+        host = urlparse(source).netloc
+        output = " ".join(str(line) for line in list(result[1]) + list(result[2]))
+        return host in output and ("Failed to fetch" in output or "无法下载" in output)
 
     def show_plan(self, expect_version, desktop):
         ros_name = "适合本系统的ROS版本(添加软件源后自动确定)"
@@ -125,7 +136,16 @@ class Tool(BaseTool):
             )
         )
 
-        self.ros_tool.install_ros_packages(version, 1 if desktop else 2, dic_base)
+        install_code = 1 if desktop else 2
+        self.ros_tool.install_ros_packages(version, install_code, dic_base)
+        for retry in range(2):
+            if self.ros_tool.install_success(version) or not self.system_mirror_failed(source_tool):
+                break
+            new_source = source_tool.switch_to_next_source()
+            if not new_source:
+                break
+            PrintUtils.print_warn("系统镜像下载中途失败, 已自动换用 {} 继续安装(已下载的包不会重复下载)".format(new_source))
+            self.ros_tool.install_ros_packages(version, install_code, dic_base)
         self.ros_tool.config_env_and_tip(version)
         if self.ros_tool.install_success(version):
             self.print_next_steps(version, desktop)

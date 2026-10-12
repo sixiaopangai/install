@@ -1018,6 +1018,8 @@ class Tool(BaseTool):
                 "安装过程中出现 404, 说明当前ROS镜像源缺包, 请重新运行一键安装并换一个ROS镜像源(阿里云或ROS官方源)"
             )
 
+        self.last_install_result = cmd_result
+
         # 安装额外的依赖
         RosVersions.install_depend(install_version)
 

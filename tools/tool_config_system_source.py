@@ -299,10 +299,29 @@ class Tool(BaseTool):
         else:
             PrintUtils.print_error("没有找到合适的镜像源,臣妾告退!")
 
+        self.current_source = source if result[0] == 0 else None
+        self.failed_sources = failed_sources
         if result[0]==0:
             PrintUtils.print_success("搞定了,不信你看,累死宝宝了，还不快去给小鱼点个赞~")
             PrintUtils.print_info(result[1])
         PrintUtils.print_success("镜像更新完成.....")
+
+    def switch_to_next_source(self):
+        """
+        全自动模式: 当前系统镜像在安装中途下载失败(限流/断连)时, 换下一个最快的镜像并更新索引.
+        返回新镜像地址, 没有可用镜像时返回 None
+        """
+        if not getattr(self, 'current_source', None):
+            return None
+        self.failed_sources.append(self.current_source)
+        source = self.replace_source(self.failed_sources)
+        while source:
+            if CmdTask('sudo apt update', 100).run()[0] == 0:
+                self.current_source = source
+                return source
+            self.failed_sources.append(source)
+            source = self.replace_source(self.failed_sources)
+        return None
 
     def run(self):
         # 正式的运行
